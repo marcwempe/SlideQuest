@@ -59,6 +59,10 @@ Die zweite Grafik zoomt auf die Statusbar und die SymbolView: Sie zeigt Navigati
 Im ExplorerHeaderView sitzen nun Suchfeld und Filter-Button (Bootstrap-Icons `search`/`filter`), während der ExplorerFooterView CRUD-Aktionen (Create/Edit/Delete) über die Schaltflächen `ExplorerCreateButton`, `ExplorerEditButton` und `ExplorerDeleteButton` bereitstellt.
 Zusätzliche Symbolleisten-Icons (Audio, Dateien, Fenster, Layouts) liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/` bereit. Die SymbolView fungiert als Navigation: Jeder Button öffnet eine Sub-Anwendung im Explorer- und Detailbereich. Der `FileExplorerLauncher` lädt die programmeigene Asset-Library für Bilder, Videos, Audios und Markdown-Dateien; `NoteExplorerLauncher`, `AudioExplorerLauncher` und `LayoutExplorerLauncher` folgen demselben Muster für weitere Spezialbereiche.
 
+![MasterWindow Steuerzentrale mit Explorer](assets/MasterWinder_ZentraleSteuerelemente_MitExplorer.png)
+
+Die dritte Grafik kombiniert SymbolView, Statusbar und Explorer-Header/-Footer als globale Steuerzentrale, unabhängig von der Sub-App.
+
 ### Nächste Schritte
 
 Neue Module gehören nach `src/slidequest` (z. B. Slide-Parsing, Datenquellen, Layoutlogik). Der aktuelle Doppel-Fenster-Aufbau dient als Grundlage für weitere Features – ersetze die Platzhalter schrittweise durch die produktiven Komponenten.

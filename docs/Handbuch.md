@@ -43,6 +43,10 @@ Die SymbolView ist eine vertikale Navigationsleiste. Jeder Button öffnet eine e
 
 > Abbildung: Zusammenspiel aus SymbolView (links) und Statusbar (zentral/rechts) inklusive Seekbar, Transport-Buttons und Lautstärke.
 
+![Steuerzentrale mit Explorer](../assets/MasterWinder_ZentraleSteuerelemente_MitExplorer.png)
+
+> Ergänzt um ExplorerHeaderView (Search/Filter) und ExplorerFooterView (CRUD).
+
 ## Explorer Controls
 
 - `ExplorerSearchInput` + `ExplorerFilterButton` leben im ExplorerHeaderView und nutzen die Bootstrap-Icons `search`/`filter` (siehe `assets/icons/bootstrap/actions/`).
