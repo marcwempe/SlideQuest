@@ -51,6 +51,7 @@ Der Dev-Watcher nutzt `watchfiles`, um die GUI automatisch neu zu starten, sobal
 ![MasterWindow Layout](assets/MasterWindow_GeneralLayout.png)
 
 Die Abbildung zeigt die aktuelle Zwei-\*Drei-Teilung des MasterWindow (StatusBar, SymbolView, Explorer- und Detail-Bereiche mit ihren Subviews) und dient als visuelle Grundlage für weitere Anpassungen.
+Zusätzliche Symbolleisten-Icons (Audio, Dateien, Fenster, Layouts) liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/` bereit.
 
 ### Nächste Schritte
 

@@ -29,6 +29,7 @@
 - `src/slidequest/dev.py` – watcher/orchestration of the dev loop.
 - `AGENTS.md` – persistent AI guidance (not user-facing).
 - `docs/` – Obsidian vault for the handbook and future notes.
+- `assets/icons/bootstrap/<category>` – Bootstrap icon sets (MIT) staged for audio, file, window, and layout controls.
 - `MTMT*` – legacy application; treat as read-only unless explicitly tasked.
 
 ## Collaboration notes
