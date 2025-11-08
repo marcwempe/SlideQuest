@@ -44,6 +44,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 SLIDES_FILE = DATA_DIR / "slides.json"
 THUMBNAIL_DIR = PROJECT_ROOT / "assets" / "thumbnails"
+
+
+def resolve_media_path(path: str) -> str:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return str(candidate)
+    return str((PROJECT_ROOT / candidate).resolve())
 @dataclass(frozen=True)
 class ButtonSpec:
     name: str
@@ -211,6 +218,7 @@ class SlideLayoutPayload:
     active_layout: str
     thumbnail_url: str = ""
     content: list[str] = field(default_factory=list)
+    variants: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -573,8 +581,7 @@ class LayoutPreviewCanvas(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), Qt.transparent)
-        base_color = QColor("#4c8bf5" if self._selected else "#8ab4f8")
-        border_color = QColor("#b3c8ff" if self._selected else "#d0dcff")
+        border_color = QColor("#4c8bf5" if self._selected else "#8ab4f8")
         padding = 4
         available_width = max(self.width() - padding * 2, 1)
         available_height = max(self.height() - padding * 2, 1)
@@ -584,14 +591,23 @@ class LayoutPreviewCanvas(QWidget):
             w = cell.width * available_width
             h = cell.height * available_height
             rect = QRectF(x, y, w, h)
-            painter.fillRect(rect, base_color)
             if pix := self._area_images.get(cell.area_id):
-                scaled = pix.scaled(int(w), int(h), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                target_x = rect.x() + (rect.width() - scaled.width()) / 2
-                target_y = rect.y() + (rect.height() - scaled.height()) / 2
-                painter.drawPixmap(target_x, target_y, scaled)
+                pix_w = pix.width()
+                pix_h = pix.height()
+                if pix_w > 0 and pix_h > 0 and rect.width() > 0 and rect.height() > 0:
+                    target_ratio = rect.width() / rect.height()
+                    pix_ratio = pix_w / pix_h
+                    if pix_ratio > target_ratio:
+                        crop_width = int(pix_h * target_ratio)
+                        x_offset = max((pix_w - crop_width) // 2, 0)
+                        source = QRect(x_offset, 0, crop_width, pix_h)
+                    else:
+                        crop_height = int(pix_w / target_ratio)
+                        y_offset = max((pix_h - crop_height) // 2, 0)
+                        source = QRect(0, y_offset, pix_w, crop_height)
+                    painter.drawPixmap(rect, pix, source)
             painter.setPen(border_color)
-            painter.drawRoundedRect(rect, 3, 3)
+            painter.drawRect(rect)
         painter.end()
 
     def dragEnterEvent(self, event) -> None:  # type: ignore[override]
@@ -950,7 +966,7 @@ class MasterWindow(QMainWindow):
         self._detail_preview_canvas.areaDropped.connect(self._handle_preview_drop)
         detail_main_layout.addWidget(self._detail_preview_canvas, 1)
         if initial_images:
-            self._detail_preview_canvas.set_area_images(initial_images)
+            self._detail_preview_canvas.set_area_images(self._resolve_image_paths(initial_images))
         self._sync_preview_with_current_slide()
 
         detail_footer_layout = QVBoxLayout(detail_footer)
@@ -1375,19 +1391,22 @@ class MasterWindow(QMainWindow):
     def _set_current_layout(self, layout_id: str, images: dict[int, str] | None = None) -> None:
         layout_id = layout_id or "1S|100/1R|100"
         self._current_layout_id = layout_id
-        image_map = images or {}
-        if self._detail_preview_canvas:
-            self._detail_preview_canvas.set_layout_description(layout_id)
-            self._detail_preview_canvas.set_area_images(image_map)
+        image_map = images.copy() if images else {}
+        resolved_for_preview = self._resolve_image_paths(image_map)
         if self._presentation_window:
             self._presentation_window.set_layout_description(layout_id)
             self._presentation_window.set_area_images(image_map)
+            resolved_for_preview = self._presentation_window.resolved_images()
+            layout_id = self._presentation_window.current_layout
+        if self._detail_preview_canvas:
+            self._detail_preview_canvas.set_layout_description(layout_id)
+            self._detail_preview_canvas.set_area_images(resolved_for_preview)
         self._update_related_layout_selection()
 
     def _sync_preview_with_current_slide(self) -> None:
         slide = self._current_slide
         if slide:
-            self._set_current_layout(slide.layout.active_layout, slide.images)
+            self._set_current_layout(slide.layout.active_layout, slide.images.copy())
         else:
             self._set_current_layout(self._current_layout_id)
 
@@ -1401,6 +1420,13 @@ class MasterWindow(QMainWindow):
             except ValueError:
                 return str(path)
         return source
+
+    def _resolve_image_paths(self, images: dict[int, str]) -> dict[int, str]:
+        resolved: dict[int, str] = {}
+        for area_id, path in images.items():
+            if path:
+                resolved[area_id] = resolve_media_path(path)
+        return resolved
 
     def _regenerate_current_slide_thumbnail(self) -> None:
         slide = self._current_slide
@@ -1533,6 +1559,12 @@ class MasterWindow(QMainWindow):
             if path:
                 ordered.append(path)
         return ordered
+
+    def _default_images_for_layout(self, layout_id: str) -> dict[int, str]:
+        for item in LAYOUT_ITEMS:
+            if item.layout == layout_id:
+                return item.images.copy()
+        return {}
 
     def _area_id_order(self, layout_id: str) -> list[int]:
         cells = parse_layout_description(layout_id or "1S|100/1R|100")
@@ -1724,7 +1756,12 @@ class MasterWindow(QMainWindow):
 
     def _show_presentation_window(self) -> None:
         window = self._presentation_window
-        if window is None or window.isVisible():
+        if window is None:
+            window = PresentationWindow()
+            window.closed.connect(self._on_presentation_closed)
+            self._presentation_window = window
+            self._sync_preview_with_current_slide()
+        if window.isVisible():
             return
         window.show()
         if self._presentation_button is not None:
@@ -1733,6 +1770,7 @@ class MasterWindow(QMainWindow):
     def _on_presentation_closed(self) -> None:
         if self._presentation_button is not None:
             self._presentation_button.setEnabled(True)
+        self._presentation_window = None
 
 
 class PresentationWindow(QMainWindow):
@@ -1744,18 +1782,41 @@ class PresentationWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SlideQuest – Presentation")
         self.setMinimumSize(1280, 720)
-        self._canvas = LayoutPreviewCanvas("1S|100/1R|100", self)
+        self._current_layout = "1S|100/1R|100"
+        self._source_images: dict[int, str] = {}
+        self._resolved_images: dict[int, str] = {}
+        self._canvas = LayoutPreviewCanvas(self._current_layout, self)
+        self._canvas.setObjectName("presentationCanvas")
+        self._canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         container = QWidget(self)
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.addWidget(self._canvas, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._canvas)
         self.setCentralWidget(container)
 
     def set_layout_description(self, layout_description: str) -> None:
-        self._canvas.set_layout_description(layout_description or "1S|100/1R|100")
+        layout_description = layout_description or "1S|100/1R|100"
+        self._current_layout = layout_description
+        self._canvas.set_layout_description(layout_description)
 
     def set_area_images(self, images: dict[int, str] | None) -> None:
-        self._canvas.set_area_images(images)
+        self._source_images = images.copy() if images else {}
+        self._resolved_images = {}
+        for area_id, path in self._source_images.items():
+            if path:
+                self._resolved_images[area_id] = resolve_media_path(path)
+        self._canvas.set_area_images(self._resolved_images)
+
+    @property
+    def current_layout(self) -> str:
+        return self._current_layout
+
+    def current_state(self) -> tuple[str, dict[int, str]]:
+        return self._current_layout, self._source_images.copy()
+
+    def resolved_images(self) -> dict[int, str]:
+        return self._resolved_images.copy()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         super().closeEvent(event)
