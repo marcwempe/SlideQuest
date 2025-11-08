@@ -1,0 +1,109 @@
+{
+  "slides": [
+    {
+      "title": "Einspaltig",
+      "subtitle": "Vollflächige Anzeige",
+      "group": "Standard",
+      "layout": {
+        "active_layout": "3S|20:60:20/1R:100/1R:100/1R:100",
+        "thumbnail_url": "assets/thumbnails/einspaltig-1.png",
+        "content": [
+          "/Users/marcwempe/Downloads/SceneImage_4.png",
+          "/Users/marcwempe/Downloads/SceneImage_4.png"
+        ]
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Zweispaltig",
+      "subtitle": "Balance 60/40",
+      "group": "Standard",
+      "layout": {
+        "active_layout": "2S|60:40/1R:100/1R:100",
+        "thumbnail_url": "",
+        "content": []
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Dreispaltig",
+      "subtitle": "Seitenleisten links/rechts",
+      "group": "Standard",
+      "layout": {
+        "active_layout": "3S|20:60:20/1R:100/1R:100/1R:100",
+        "thumbnail_url": "",
+        "content": []
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Moderator Panel",
+      "subtitle": "Breite Bühne mit vier Slots",
+      "group": "Show",
+      "layout": {
+        "active_layout": "2S|75:25/1R|100/4R|25:25:25:25",
+        "thumbnail_url": "",
+        "content": []
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Fokus 3-1-3",
+      "subtitle": "Zentrale Bühne mit Sidebars",
+      "group": "Show",
+      "layout": {
+        "active_layout": "3S|20:60:20/2R|50:50/1R|100/2R|50:50",
+        "thumbnail_url": "",
+        "content": []
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Matrix 3-1-3",
+      "subtitle": "Drei Spalten mit 3/1/3 Reihen",
+      "group": "Show",
+      "layout": {
+        "active_layout": "3S|12.5:75:12.5/3R|34:33:33/1R|100/3R|34:33:33",
+        "thumbnail_url": "",
+        "content": []
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    }
+  ]
+}

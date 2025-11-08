@@ -9,7 +9,7 @@
 - Prefer simple code and keep cognitive complexity low.
 - Favor smaller, focused files over large ones.
 - Ask the user before acting if their request is ambiguous.
-- Keep `AGENTS.md` and `README.md` current; AGENTS is AI-only, README summarizes the handbook in `docs/`.
+- Keep `AGENTS.md` and `README.md` current; AGENTS/Tasks stay in English, während `docs/Handbuch.md` bewusst deutschsprachig bleibt.
 - If a request implies a large change, capture it in `Tasks.md`, split it into prompt-sized subtasks, and tackle them incrementally.
 - [IMPORTANT] Documentation must stay current: user-facing docs (e.g., `README.md`) are written in German (with umlauts), technical docs (`AGENTS.md`, `docs/`, `Tasks.md`) stay in English.
 - Treat every component as a reusable module; design APIs and layouts so they work independently of the surrounding UI.
@@ -25,6 +25,7 @@
 - Entry point: `src/slidequest/app.py`. Keep widgets modular.
 - Shared config/notes live in root markdown files; add comments only when intent is unclear.
 - Maintain the two-window setup: `MasterWindow` (controls) + `PresentationWindow` (slides).
+- Persist slide content in `data/slides.json` and keep the Explorer thumbnails in sync by re-rendering the `PresentationWindow` into `assets/thumbnails/…` whenever layouts or dropped media change.
 
 ## Communication
 - Summaries lead with the “why,” then the “what,” and list TODOs/follow-ups.

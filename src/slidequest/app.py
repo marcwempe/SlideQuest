@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Any, Callable, Iterable
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter, QPixmap
@@ -39,6 +41,9 @@ EXPLORER_FOOTER_HEIGHT = EXPLORER_HEADER_HEIGHT
 DETAIL_HEADER_HEIGHT = 60
 DETAIL_FOOTER_HEIGHT = DETAIL_HEADER_HEIGHT
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
+SLIDES_FILE = DATA_DIR / "slides.json"
+THUMBNAIL_DIR = PROJECT_ROOT / "assets" / "thumbnails"
 @dataclass(frozen=True)
 class ButtonSpec:
     name: str
@@ -202,6 +207,35 @@ LAYOUT_ITEMS: tuple[LayoutItem, ...] = (
 
 
 @dataclass
+class SlideLayoutPayload:
+    active_layout: str
+    thumbnail_url: str = ""
+    content: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SlideAudioPayload:
+    playlist: list[str] = field(default_factory=list)
+    effects: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SlideNotesPayload:
+    notebooks: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SlideData:
+    title: str
+    subtitle: str
+    group: str
+    layout: SlideLayoutPayload
+    audio: SlideAudioPayload
+    notes: SlideNotesPayload
+    images: dict[int, str] = field(default_factory=dict)
+
+
+@dataclass
 class LayoutCell:
     x: float
     y: float
@@ -215,6 +249,13 @@ class RatioSpec:
     ratio: float = 0.0
     area_id: int = 0
     has_explicit_id: bool = False
+
+
+def _slugify(value: str) -> str:
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    value = value.strip("-")
+    return value or "slide"
 
 
 def _parse_ratios(segment: str) -> list[float]:
@@ -687,7 +728,9 @@ class MasterWindow(QMainWindow):
         self._volume_button_map: dict[str, QToolButton] = {}
         self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
-        self._layout_list: QListWidget | None = None
+        self._slides: list[SlideData] = []
+        self._slide_list: QListWidget | None = None
+        self._current_slide: SlideData | None = None
         self._detail_title_input: QLineEdit | None = None
         self._detail_subtitle_input: QLineEdit | None = None
         self._detail_group_combo: QComboBox | None = None
@@ -698,6 +741,7 @@ class MasterWindow(QMainWindow):
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
         self._container_color = QColor("#222222")
+        self._slides = self._load_slides()
         self._setup_placeholder()
 
     def _setup_placeholder(self) -> None:
@@ -806,16 +850,16 @@ class MasterWindow(QMainWindow):
         explorer_main_layout = QVBoxLayout(explorer_main)
         explorer_main_layout.setContentsMargins(4, 4, 4, 4)
         explorer_main_layout.setSpacing(4)
-        self._layout_list = QListWidget(explorer_main)
-        self._layout_list.setObjectName("layoutList")
-        self._layout_list.setSpacing(6)
-        self._layout_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
-        explorer_main_layout.addWidget(self._layout_list)
+        self._slide_list = QListWidget(explorer_main)
+        self._slide_list.setObjectName("slideList")
+        self._slide_list.setSpacing(6)
+        self._slide_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
+        explorer_main_layout.addWidget(self._slide_list)
         explorer_main_scroll.setWidget(explorer_main)
-        self._populate_layout_list()
-        self._layout_list.currentItemChanged.connect(
-            lambda current, _prev: self._on_layout_selected(current)
+        self._slide_list.currentItemChanged.connect(
+            lambda current, _prev: self._on_slide_selected(current)
         )
+        self._populate_slide_list()
 
         explorer_layout.addWidget(explorer_header)
         explorer_layout.addWidget(explorer_main_scroll, 1)
@@ -897,17 +941,17 @@ class MasterWindow(QMainWindow):
         detail_main_layout.setContentsMargins(12, 12, 12, 12)
         detail_main_layout.setSpacing(12)
 
-        initial_layout = LAYOUT_ITEMS[0].layout if LAYOUT_ITEMS else "1S|100/1R|100"
+        initial_layout = self._slides[0].layout.active_layout if self._slides else "1S|100/1R|100"
+        initial_images = self._slides[0].images.copy() if self._slides else {}
         self._current_layout_id = initial_layout
         self._detail_preview_canvas = LayoutPreviewCanvas(initial_layout, detail_main, accepts_drop=True)
         self._detail_preview_canvas.setObjectName("detailPreview")
         self._detail_preview_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._detail_preview_canvas.areaDropped.connect(self._handle_preview_drop)
         detail_main_layout.addWidget(self._detail_preview_canvas, 1)
-        if self._layout_list and self._layout_list.currentItem():
-            current_layout_item = self._layout_list.currentItem().data(Qt.ItemDataRole.UserRole)
-            if current_layout_item:
-                self._set_current_layout(current_layout_item.layout, current_layout_item.images)
+        if initial_images:
+            self._detail_preview_canvas.set_area_images(initial_images)
+        self._sync_preview_with_current_slide()
 
         detail_footer_layout = QVBoxLayout(detail_footer)
         detail_footer_layout.setContentsMargins(12, 8, 12, 12)
@@ -1242,82 +1286,91 @@ class MasterWindow(QMainWindow):
         self._update_related_layout_selection()
 
     def _on_related_layout_clicked(self, layout_item: LayoutItem) -> None:
-        if not self._layout_list:
+        slide = self._current_slide
+        if slide is None:
             return
-        for row in range(self._layout_list.count()):
-            list_item = self._layout_list.item(row)
-            item_data = list_item.data(Qt.ItemDataRole.UserRole)
-            if item_data and item_data.layout == layout_item.layout:
-                self._layout_list.setCurrentRow(row)
-                return
-        self._set_current_layout(layout_item.layout, layout_item.images)
+        slide.layout.active_layout = layout_item.layout
+        valid_ids = {cell.area_id for cell in parse_layout_description(layout_item.layout)}
+        slide.images = {idx: path for idx, path in slide.images.items() if idx in valid_ids}
+        slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+        self._set_current_layout(slide.layout.active_layout, slide.images)
+        self._persist_slides()
+        self._update_related_layout_selection()
+        self._regenerate_current_slide_thumbnail()
 
     def _update_related_layout_selection(self) -> None:
         if not self._related_layout_cards:
             return
+        active_layout = self._current_slide.layout.active_layout if self._current_slide else self._current_layout_id
         for card in self._related_layout_cards:
-            card.setSelected(self._current_layout_id == card.layout_id)
+            card.setSelected(active_layout == card.layout_id)
 
     def _handle_preview_drop(self, area_id: int, source: str) -> None:
-        if not self._layout_list or area_id <= 0:
-            return
-        item = self._layout_list.currentItem()
-        if item is None:
-            return
-        layout_item = item.data(Qt.ItemDataRole.UserRole)
-        if layout_item is None:
+        slide = self._current_slide
+        if slide is None or area_id <= 0:
             return
         source = source.strip()
         if not source:
             return
-        layout_item.images[area_id] = source
-        item.setData(Qt.ItemDataRole.UserRole, layout_item)
-        self._set_current_layout(layout_item.layout, layout_item.images)
+        normalized = self._normalize_media_path(source)
+        if not normalized:
+            return
+        slide.images[area_id] = normalized
+        slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+        self._set_current_layout(slide.layout.active_layout, slide.images)
+        self._persist_slides()
+        self._refresh_slide_widget(slide)
+        self._regenerate_current_slide_thumbnail()
 
     def _save_detail_changes(self) -> None:
-        if not self._layout_list:
+        slide = self._current_slide
+        if slide is None:
             return
-        item = self._layout_list.currentItem()
-        if item is None:
-            return
-        existing = item.data(Qt.ItemDataRole.UserRole)
-        if existing is None:
-            return
-        title = self._detail_title_input.text().strip() if self._detail_title_input else existing.title
+        title = self._detail_title_input.text().strip() if self._detail_title_input else slide.title
         subtitle = (
             self._detail_subtitle_input.text().strip()
             if self._detail_subtitle_input
-            else existing.subtitle
+            else slide.subtitle
         )
         group = (
             self._detail_group_combo.currentText().strip()
             if self._detail_group_combo
-            else existing.group
+            else slide.group
         )
-        title = title or existing.title
-        subtitle = subtitle or existing.subtitle
-        group = group or existing.group
-        updated = LayoutItem(
-            title,
-            subtitle,
-            existing.layout,
-            group,
-            existing.preview,
-            existing.images.copy(),
-        )
-        item.setData(Qt.ItemDataRole.UserRole, updated)
-        widget = self._layout_list.itemWidget(item)
-        if widget is not None:
-            self._update_layout_item_widget(widget, updated)
-        self._set_current_layout(updated.layout, updated.images)
+        title = title or slide.title
+        subtitle = subtitle or slide.subtitle
+        group = group or slide.group
+        if (title, subtitle, group) == (slide.title, slide.subtitle, slide.group):
+            return
+        slide.title = title
+        slide.subtitle = subtitle
+        slide.group = group
+        slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+        self._persist_slides()
+        self._refresh_slide_widget(slide)
 
-    def _update_layout_item_widget(self, widget: QWidget, layout_item: LayoutItem) -> None:
-        if title := widget.findChild(QLabel, "layoutItemTitle"):
-            title.setText(layout_item.title)
-        if subtitle := widget.findChild(QLabel, "layoutItemSubtitle"):
-            subtitle.setText(layout_item.subtitle)
-        if group := widget.findChild(QLabel, "layoutItemGroup"):
-            group.setText(layout_item.group)
+    def _refresh_slide_widget(self, slide: SlideData) -> None:
+        if not self._slide_list:
+            return
+        for row in range(self._slide_list.count()):
+            list_item = self._slide_list.item(row)
+            item_data = list_item.data(Qt.ItemDataRole.UserRole)
+            if item_data is slide:
+                widget = self._slide_list.itemWidget(list_item)
+                if widget is not None:
+                    self._update_slide_item_widget(widget, slide)
+                    list_item.setSizeHint(widget.sizeHint())
+                break
+
+    def _update_slide_item_widget(self, widget: QWidget, slide: SlideData) -> None:
+        if title := widget.findChild(QLabel, "slideItemTitle"):
+            title.setText(slide.title)
+        if subtitle := widget.findChild(QLabel, "slideItemSubtitle"):
+            subtitle.setText(slide.subtitle)
+        if group := widget.findChild(QLabel, "slideItemGroup"):
+            group.setText(slide.group)
+        if preview := widget.findChild(QLabel, "slideItemPreview"):
+            preview.setPixmap(self._build_preview_pixmap(slide))
 
     def _set_current_layout(self, layout_id: str, images: dict[int, str] | None = None) -> None:
         layout_id = layout_id or "1S|100/1R|100"
@@ -1331,51 +1384,206 @@ class MasterWindow(QMainWindow):
             self._presentation_window.set_area_images(image_map)
         self._update_related_layout_selection()
 
-    def _populate_layout_list(self) -> None:
-        if self._layout_list is None:
+    def _sync_preview_with_current_slide(self) -> None:
+        slide = self._current_slide
+        if slide:
+            self._set_current_layout(slide.layout.active_layout, slide.images)
+        else:
+            self._set_current_layout(self._current_layout_id)
+
+    def _normalize_media_path(self, source: str) -> str:
+        if source.startswith("file://"):
+            source = source[7:]
+        path = Path(source)
+        if path.is_absolute():
+            try:
+                return str(path.relative_to(PROJECT_ROOT))
+            except ValueError:
+                return str(path)
+        return source
+
+    def _regenerate_current_slide_thumbnail(self) -> None:
+        slide = self._current_slide
+        if slide is None:
             return
-        self._layout_list.clear()
-        for layout_item in LAYOUT_ITEMS:
-            item_copy = LayoutItem(
-                layout_item.title,
-                layout_item.subtitle,
-                layout_item.layout,
-                layout_item.group,
-                layout_item.preview,
-                layout_item.images.copy(),
+        if not self._capture_presentation_thumbnail_path(slide):
+            return
+        self._persist_slides()
+        self._refresh_slide_widget(slide)
+
+    def _capture_presentation_thumbnail_path(self, slide: SlideData) -> bool:
+        window = self._presentation_window
+        if window is None:
+            return False
+        widget = window.centralWidget()
+        if widget is None or widget.size().isEmpty():
+            return False
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        target_name = f"{_slugify(slide.title)}-{self._slides.index(slide) + 1}"
+        target_path = THUMBNAIL_DIR / f"{target_name}.png"
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        pixmap = QPixmap(widget.size())
+        widget.render(pixmap)
+        scaled = pixmap.scaled(
+            320,
+            180,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        if not scaled.save(str(target_path), "PNG"):
+            return False
+        try:
+            relative = target_path.relative_to(PROJECT_ROOT)
+        except ValueError:
+            relative = target_path
+        slide.layout.thumbnail_url = str(relative)
+        return True
+
+    def _load_slides(self) -> list[SlideData]:
+        if SLIDES_FILE.exists():
+            try:
+                payload = json.loads(SLIDES_FILE.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                payload = {}
+            entries = payload.get("slides") or []
+            slides = [self._slide_from_payload(entry) for entry in entries]
+            if slides:
+                return slides
+        return self._initial_slides()
+
+    def _slide_from_payload(self, data: dict[str, Any]) -> SlideData:
+        layout_data = data.get("layout") or {}
+        audio_data = data.get("audio") or {}
+        notes_data = data.get("notes") or {}
+        slide = SlideData(
+            title=data.get("title") or "Unbenannte Folie",
+            subtitle=data.get("subtitle") or "",
+            group=data.get("group") or "",
+            layout=SlideLayoutPayload(
+                layout_data.get("active_layout") or "1S|100/1R|100",
+                layout_data.get("thumbnail_url") or "",
+                list(layout_data.get("content") or []),
+            ),
+            audio=SlideAudioPayload(
+                playlist=list(audio_data.get("playlist") or []),
+                effects=list(audio_data.get("effects") or []),
+            ),
+            notes=SlideNotesPayload(
+                notebooks=list(notes_data.get("notebooks") or []),
+            ),
+        )
+        slide.images = self._content_to_images(slide.layout.active_layout, slide.layout.content)
+        return slide
+
+    def _slide_to_payload(self, slide: SlideData) -> dict[str, Any]:
+        content = self._images_to_content(slide.layout.active_layout, slide.images)
+        return {
+            "title": slide.title,
+            "subtitle": slide.subtitle,
+            "group": slide.group,
+            "layout": {
+                "active_layout": slide.layout.active_layout,
+                "thumbnail_url": slide.layout.thumbnail_url,
+                "content": content,
+            },
+            "audio": {
+                "playlist": slide.audio.playlist,
+                "effects": slide.audio.effects,
+            },
+            "notes": {
+                "notebooks": slide.notes.notebooks,
+            },
+        }
+
+    def _initial_slides(self) -> list[SlideData]:
+        slides: list[SlideData] = []
+        for layout in LAYOUT_ITEMS:
+            slide = SlideData(
+                title=layout.title,
+                subtitle=layout.subtitle,
+                group=layout.group,
+                layout=SlideLayoutPayload(layout.layout, "", []),
+                audio=SlideAudioPayload(),
+                notes=SlideNotesPayload(),
+                images=layout.images.copy(),
             )
-            widget = self._create_layout_list_widget(item_copy)
+            slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+            slides.append(slide)
+        return slides
+
+    def _persist_slides(self) -> None:
+        self._ensure_data_dirs()
+        payload = {"slides": [self._slide_to_payload(slide) for slide in self._slides]}
+        SLIDES_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _content_to_images(self, layout_id: str, content: list[str]) -> dict[int, str]:
+        images: dict[int, str] = {}
+        area_ids = self._area_id_order(layout_id)
+        for path, area_id in zip(content or [], area_ids):
+            if path:
+                images[area_id] = path
+        return images
+
+    def _images_to_content(self, layout_id: str, images: dict[int, str]) -> list[str]:
+        ordered = []
+        for area_id in self._area_id_order(layout_id):
+            path = images.get(area_id)
+            if path:
+                ordered.append(path)
+        return ordered
+
+    def _area_id_order(self, layout_id: str) -> list[int]:
+        cells = parse_layout_description(layout_id or "1S|100/1R|100")
+        seen: list[int] = []
+        for cell in cells:
+            if cell.area_id not in seen:
+                seen.append(cell.area_id)
+        return seen
+
+    def _ensure_data_dirs(self) -> None:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _populate_slide_list(self) -> None:
+        if self._slide_list is None:
+            return
+        self._slide_list.clear()
+        for slide in self._slides:
+            widget = self._create_slide_list_widget(slide)
             list_item = QListWidgetItem()
             list_item.setSizeHint(widget.sizeHint())
-            list_item.setData(Qt.ItemDataRole.UserRole, item_copy)
-            self._layout_list.addItem(list_item)
-            self._layout_list.setItemWidget(list_item, widget)
-        if self._layout_list.count():
-            self._layout_list.setCurrentRow(0)
+            list_item.setData(Qt.ItemDataRole.UserRole, slide)
+            self._slide_list.addItem(list_item)
+            self._slide_list.setItemWidget(list_item, widget)
+        if self._slide_list.count():
+            self._slide_list.setCurrentRow(0)
 
-    def _create_layout_list_widget(self, item: LayoutItem) -> QWidget:
+    def _create_slide_list_widget(self, slide: SlideData) -> QWidget:
         container = QFrame()
-        container.setObjectName("layoutListItem")
+        container.setObjectName("slideListItem")
         container_layout = QHBoxLayout(container)
         container_layout.setContentsMargins(8, 8, 8, 8)
         container_layout.setSpacing(12)
 
         preview_label = QLabel(container)
+        preview_label.setObjectName("slideItemPreview")
         preview_label.setFixedSize(96, 72)
-        preview_label.setPixmap(self._build_preview_pixmap(item))
+        preview_label.setPixmap(self._build_preview_pixmap(slide))
         preview_label.setScaledContents(True)
 
         text_layout = QVBoxLayout()
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
-        title = QLabel(item.title, container)
-        title.setObjectName("layoutItemTitle")
+        title = QLabel(slide.title, container)
+        title.setObjectName("slideItemTitle")
         title.setStyleSheet("font-weight: 600; font-size: 16px;")
-        subtitle = QLabel(item.subtitle, container)
-        subtitle.setObjectName("layoutItemSubtitle")
+        subtitle = QLabel(slide.subtitle, container)
+        subtitle.setObjectName("slideItemSubtitle")
         subtitle.setStyleSheet("color: palette(mid);")
-        group = QLabel(item.group, container)
-        group.setObjectName("layoutItemGroup")
+        group = QLabel(slide.group, container)
+        group.setObjectName("slideItemGroup")
         group.setStyleSheet("font-size: 12px; color: palette(dark);")
         text_layout.addWidget(title)
         text_layout.addWidget(subtitle)
@@ -1385,9 +1593,13 @@ class MasterWindow(QMainWindow):
         container_layout.addLayout(text_layout, 1)
         return container
 
-    def _build_preview_pixmap(self, item: LayoutItem) -> QPixmap:
-        if item.preview and item.preview.exists():
-            pix = QPixmap(str(item.preview)).scaled(
+    def _build_preview_pixmap(self, slide: SlideData) -> QPixmap:
+        preview_path = None
+        if slide.layout.thumbnail_url:
+            candidate = PROJECT_ROOT / slide.layout.thumbnail_url
+            preview_path = candidate if candidate.exists() else None
+        if preview_path and preview_path.exists():
+            pix = QPixmap(str(preview_path)).scaled(
                 96, 72, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
             return pix
@@ -1401,17 +1613,18 @@ class MasterWindow(QMainWindow):
         painter.end()
         return pix
 
-    def _on_layout_selected(self, item: QListWidgetItem | None) -> None:
-        layout_item = item.data(Qt.ItemDataRole.UserRole) if item else None
-        self._update_detail_header(layout_item)
-        layout_id = layout_item.layout if layout_item else ""
-        images = layout_item.images if layout_item else {}
+    def _on_slide_selected(self, item: QListWidgetItem | None) -> None:
+        slide = item.data(Qt.ItemDataRole.UserRole) if item else None
+        self._current_slide = slide
+        self._update_detail_header(slide)
+        layout_id = slide.layout.active_layout if slide else ""
+        images = slide.images if slide else {}
         self._set_current_layout(layout_id, images)
 
-    def _update_detail_header(self, layout_item: LayoutItem | None) -> None:
-        title = layout_item.title if layout_item else "Titel"
-        subtitle = layout_item.subtitle if layout_item else "Untertitel"
-        group = layout_item.group if layout_item else "Gruppe"
+    def _update_detail_header(self, slide: SlideData | None) -> None:
+        title = slide.title if slide else "Titel"
+        subtitle = slide.subtitle if slide else "Untertitel"
+        group = slide.group if slide else "Gruppe"
         if self._detail_title_input:
             self._detail_title_input.setText(title)
         if self._detail_subtitle_input:
@@ -1422,7 +1635,7 @@ class MasterWindow(QMainWindow):
                 self._detail_group_combo.addItem(group)
                 index = self._detail_group_combo.findText(group)
             self._detail_group_combo.setCurrentIndex(index)
-        if layout_item is None and self._detail_group_combo:
+        if slide is None and self._detail_group_combo:
             self._detail_group_combo.setEditText(group)
 
     @staticmethod
@@ -1560,7 +1773,7 @@ def main() -> None:
     presentation.hide()
     master._presentation_window = presentation
     presentation.closed.connect(master._on_presentation_closed)
-    master._set_current_layout(master._current_layout_id)
+    master._sync_preview_with_current_slide()
     master.show()
     if owns_event_loop:
         assert app is not None
