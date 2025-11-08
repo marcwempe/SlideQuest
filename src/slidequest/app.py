@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 
-from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QPainter
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPalette, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -12,52 +14,148 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QScrollArea,
     QSplitter,
-    QSizePolicy,
+    QToolButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 
 STATUS_BAR_SIZE = 48
+SYMBOL_BUTTON_SIZE = STATUS_BAR_SIZE - 8
+STATUS_ICON_SIZE = STATUS_BAR_SIZE - 12
+ICON_PIXMAP_SIZE = 24
 EXPLORER_HEADER_HEIGHT = 60
 EXPLORER_FOOTER_HEIGHT = EXPLORER_HEADER_HEIGHT
 DETAIL_HEADER_HEIGHT = 60
 DETAIL_FOOTER_HEIGHT = DETAIL_HEADER_HEIGHT
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SYMBOL_BUTTONS: tuple[tuple[str, Path, str], ...] = (
+    (
+        "LayoutExplorerLauncher",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "layouts" / "columns-gap.svg",
+        "Layoutübersicht öffnen",
+    ),
+    (
+        "AudioExplorerLauncher",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
+        "Audio-Einstellungen öffnen",
+    ),
+    (
+        "NoteLauncher",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark.svg",
+        "Notizübersicht öffnen",
+    ),
+    (
+        "FileExplorerLauncher",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "folder.svg",
+        "Dateiexplorer öffnen",
+    ),
+)
+
+STATUS_BUTTONS: tuple[
+    tuple[str, Path, str, bool, bool, bool, Path | None]
+] = (
+    (
+        "ShuffleButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "shuffle.svg",
+        "Shuffle aktivieren",
+        True,
+        False,
+        False,
+        None,
+    ),
+    (
+        "PreviousTrackButton",
+        PROJECT_ROOT
+        / "assets"
+        / "icons"
+        / "bootstrap"
+        / "audio"
+        / "skip-backward-fill.svg",
+        "Vorheriger Titel",
+        False,
+        False,
+        False,
+        None,
+    ),
+    (
+        "PlayPauseButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
+        "Play/Pause",
+        True,
+        False,
+        False,
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "pause-fill.svg",
+    ),
+    (
+        "StopButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "stop-fill.svg",
+        "Stopp",
+        False,
+        False,
+        False,
+        None,
+    ),
+    (
+        "NextTrackButton",
+        PROJECT_ROOT
+        / "assets"
+        / "icons"
+        / "bootstrap"
+        / "audio"
+        / "skip-forward-fill.svg",
+        "Nächster Titel",
+        False,
+        False,
+        False,
+        None,
+    ),
+    (
+        "LoopButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "repeat.svg",
+        "Loop aktivieren",
+        True,
+        False,
+        True,
+        None,
+    ),
+    (
+        "MuteButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-mute.svg",
+        "Stummschalten",
+        True,
+        False,
+        False,
+        None,
+    ),
+    (
+        "VolumeDownButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-down.svg",
+        "Leiser",
+        False,
+        False,
+        False,
+        None,
+    ),
+    (
+        "VolumeUpButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
+        "Lauter",
+        False,
+        False,
+        False,
+        None,
+    ),
+)
 
 
-class ViewLabel(QLabel):
-    """Utility label that can rotate text when used in vertical regions."""
-
-    def __init__(self, text: str, rotate: bool = False, parent: QWidget | None = None) -> None:
-        super().__init__(text, parent)
-        self._rotate = rotate
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("font-weight: 600; color: #0f0f0f;")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-    def sizeHint(self) -> QSize:
-        hint = super().sizeHint()
-        if not self._rotate:
-            return hint
-        return hint.transposed()
-
-    def minimumSizeHint(self) -> QSize:
-        hint = super().minimumSizeHint()
-        if not self._rotate:
-            return hint
-        return hint.transposed()
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        if not self._rotate:
-            super().paintEvent(event)
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        painter.translate(self.width() / 2, self.height() / 2)
-        painter.rotate(-90)
-        rect = QRect(-self.height() // 2, -self.width() // 2, self.height(), self.width())
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.text())
-        painter.end()
+@dataclass
+class IconBinding:
+    button: QToolButton
+    icon_path: Path
+    accent_on_checked: bool = False
+    checked_icon_path: Path | None = None
 
 
 class MasterWindow(QMainWindow):
@@ -67,16 +165,15 @@ class MasterWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SlideQuest – Master")
         self.setMinimumSize(960, 600)
+        self._status_bar: QFrame | None = None
+        self._symbol_view: QFrame | None = None
+        self._symbol_buttons: list[QToolButton] = []
+        self._status_buttons: list[QToolButton] = []
+        self._icon_bindings: list[IconBinding] = []
+        self._icon_base_color = QColor("#ffffff")
+        self._icon_accent_color = QColor("#ffffff")
+        self._container_color = QColor("#222222")
         self._setup_placeholder()
-
-    def _stamp_label(self, host: QWidget, text: str, rotate: bool = False) -> None:
-        layout = host.layout()
-        if layout is None:
-            layout = QVBoxLayout(host)
-            layout.setContentsMargins(0, 0, 0, 0)
-            layout.setSpacing(0)
-        label = ViewLabel(text, rotate, host)
-        layout.addWidget(label)
 
     def _setup_placeholder(self) -> None:
         central = QWidget(self)
@@ -87,7 +184,8 @@ class MasterWindow(QMainWindow):
         status_bar = QFrame(central)
         status_bar.setObjectName("statusBar")
         status_bar.setFixedHeight(STATUS_BAR_SIZE)
-        self._stamp_label(status_bar, "StatusBar")
+        self._status_bar = status_bar
+        self._build_status_bar(status_bar)
 
         viewport = QFrame(central)
         viewport.setObjectName("appViewport")
@@ -98,7 +196,24 @@ class MasterWindow(QMainWindow):
         symbol_view = QFrame(viewport)
         symbol_view.setObjectName("symbolView")
         symbol_view.setFixedWidth(STATUS_BAR_SIZE)
-        self._stamp_label(symbol_view, "SymbolView", rotate=True)
+        self._symbol_view = symbol_view
+        symbol_layout = QVBoxLayout(symbol_view)
+        symbol_layout.setContentsMargins(4, 4, 4, 4)
+        symbol_layout.setSpacing(8)
+        for name, icon_path, tooltip in SYMBOL_BUTTONS:
+            button = self._create_icon_button(
+                parent=symbol_view,
+                object_name=name,
+                icon_path=icon_path,
+                tooltip=tooltip,
+                checkable=True,
+                auto_exclusive=True,
+                accent_on_checked=False,
+            )
+            button.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+            symbol_layout.addWidget(button)
+            self._symbol_buttons.append(button)
+        symbol_layout.addStretch(1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, viewport)
         splitter.setObjectName("contentSplitter")
@@ -114,12 +229,10 @@ class MasterWindow(QMainWindow):
         explorer_header = QFrame(explorer_container)
         explorer_header.setObjectName("explorerHeaderView")
         explorer_header.setFixedHeight(EXPLORER_HEADER_HEIGHT)
-        self._stamp_label(explorer_header, "ExplorerHeaderView")
 
         explorer_footer = QFrame(explorer_container)
         explorer_footer.setObjectName("explorerFooterView")
         explorer_footer.setFixedHeight(EXPLORER_FOOTER_HEIGHT)
-        self._stamp_label(explorer_footer, "ExplorerFooterView")
 
         explorer_main_scroll = QScrollArea(explorer_container)
         explorer_main_scroll.setObjectName("explorerMainScroll")
@@ -129,7 +242,6 @@ class MasterWindow(QMainWindow):
 
         explorer_main = QWidget()
         explorer_main.setObjectName("explorerMainView")
-        self._stamp_label(explorer_main, "ExplorerMainView")
         explorer_main_scroll.setWidget(explorer_main)
 
         explorer_layout.addWidget(explorer_header)
@@ -145,12 +257,10 @@ class MasterWindow(QMainWindow):
         detail_header = QFrame(detail_container)
         detail_header.setObjectName("detailHeaderView")
         detail_header.setFixedHeight(DETAIL_HEADER_HEIGHT)
-        self._stamp_label(detail_header, "DetailHeaderView")
 
         detail_footer = QFrame(detail_container)
         detail_footer.setObjectName("detailFooterView")
         detail_footer.setFixedHeight(DETAIL_FOOTER_HEIGHT)
-        self._stamp_label(detail_footer, "DetailFooterView")
 
         detail_main_scroll = QScrollArea(detail_container)
         detail_main_scroll.setObjectName("detailMainScroll")
@@ -160,7 +270,6 @@ class MasterWindow(QMainWindow):
 
         detail_main = QWidget()
         detail_main.setObjectName("detailMainView")
-        self._stamp_label(detail_main, "DetailMainView")
         detail_main_scroll.setWidget(detail_main)
 
         detail_layout.addWidget(detail_header)
@@ -178,51 +287,236 @@ class MasterWindow(QMainWindow):
         layout.addWidget(status_bar)
         layout.addWidget(viewport, 1)
         central.setLayout(layout)
-
         self.setCentralWidget(central)
-        self._apply_debug_palette()
+        self._apply_surface_theme()
 
-    def _apply_debug_palette(self) -> None:
-        self.setStyleSheet(
-            """
-            #statusBar {
-                background-color: #ff4d4f;
-            }
-            #appViewport {
-                background-color: #36cfc9;
-            }
-            #symbolView {
-                background-color: #fadb14;
-            }
-            #explorerView {
-                background-color: #13c2c2;
-            }
-            #explorerHeaderView {
-                background-color: #ff7a45;
-            }
-            #explorerMainView {
-                background-color: #bae637;
-            }
-            #explorerFooterView {
-                background-color: #40a9ff;
-            }
-            #detailView {
-                background-color: #722ed1;
-            }
-            #detailHeaderView {
-                background-color: #ff85c0;
-            }
-            #detailMainView {
-                background-color: #ffd666;
-            }
-            #detailFooterView {
-                background-color: #69c0ff;
-            }
-            QSplitter#contentSplitter::handle {
-                background-color: #000000;
-            }
-        """
+    def _build_status_bar(self, status_bar: QFrame) -> None:
+        layout = QHBoxLayout(status_bar)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(16)
+
+        left_container = QWidget(status_bar)
+        left_layout = QHBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
+
+        artwork = QLabel(left_container)
+        artwork.setObjectName("statusArtwork")
+        artwork.setFixedSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
+        artwork.setStyleSheet(
+            "background-color: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2);"
         )
+
+        title_container = QWidget(left_container)
+        title_container_layout = QVBoxLayout(title_container)
+        title_container_layout.setContentsMargins(4, 4, 4, 4)
+        title_container_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        title = QLabel("Titel-Platzhalter", title_container)
+        title.setObjectName("statusTitle")
+        title.setStyleSheet("font-weight: 600;")
+        title_container_layout.addWidget(title)
+        left_layout.addWidget(artwork)
+        left_layout.addWidget(title_container, 1)
+
+        center_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
+        center_slider.setObjectName("audioSeekSlider")
+        center_slider.setRange(0, 10_000)
+        center_slider.setValue(0)
+        center_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
+
+        right_container = QWidget(status_bar)
+        right_layout = QHBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        transport_layout = QHBoxLayout()
+        transport_layout.setContentsMargins(0, 0, 0, 0)
+        transport_layout.setSpacing(4)
+        transport_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        volume_layout = QHBoxLayout()
+        volume_layout.setContentsMargins(0, 0, 0, 0)
+        volume_layout.setSpacing(4)
+        volume_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        for (
+            name,
+            icon_path,
+            tooltip,
+            checkable,
+            auto_exclusive,
+            checked_by_default,
+            checked_icon_path,
+        ) in STATUS_BUTTONS:
+            button = self._create_icon_button(
+                parent=status_bar,
+                object_name=name,
+                icon_path=icon_path,
+                tooltip=tooltip,
+                checkable=checkable,
+                auto_exclusive=auto_exclusive,
+                accent_on_checked=True,
+                checked_icon_path=checked_icon_path,
+            )
+            if checked_by_default:
+                button.setChecked(True)
+            button.setFixedSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
+            if name in {"MuteButton", "VolumeDownButton", "VolumeUpButton"}:
+                volume_layout.addWidget(button)
+            else:
+                transport_layout.addWidget(button)
+            self._status_buttons.append(button)
+
+        volume_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
+        volume_slider.setObjectName("volumeSlider")
+        volume_slider.setRange(0, 100)
+        volume_slider.setValue(75)
+        volume_slider.setFixedWidth(120)
+        volume_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
+        volume_slider_shell = self._wrap_slider(volume_slider, status_bar)
+        if (volume_shell_layout := volume_slider_shell.layout()) is not None:
+            volume_shell_layout.setContentsMargins(4, 5, 4, 0)
+        volume_layout.insertWidget(2, volume_slider_shell)
+
+        right_layout.addLayout(transport_layout)
+        right_layout.addSpacing(16)
+        right_layout.addLayout(volume_layout)
+
+        center_slider_shell = self._wrap_slider(center_slider, status_bar)
+        if (shell_layout := center_slider_shell.layout()) is not None:
+            shell_layout.setContentsMargins(4, 5, 4, 0)
+
+        layout.addWidget(left_container, 1)
+        layout.addWidget(center_slider_shell, 1)
+        layout.addWidget(right_container, 1)
+
+    def _apply_surface_theme(self) -> None:
+        palette = self.palette()
+        window_color = palette.color(QPalette.ColorRole.Window)
+        is_dark = window_color.value() < 128
+
+        surface_color = window_color.darker(130 if is_dark else 115)
+
+        highlight = palette.color(QPalette.ColorRole.Highlight)
+
+        if self._status_bar is not None:
+            self._tint_surface(self._status_bar, surface_color)
+        if self._symbol_view is not None:
+            self._tint_surface(self._symbol_view, surface_color)
+
+        icon_base = palette.color(
+            QPalette.ColorRole.BrightText if is_dark else QPalette.ColorRole.Text
+        )
+        base_color = icon_base.lighter(185) if is_dark else icon_base.darker(180)
+
+        self._icon_base_color = base_color
+        self._icon_accent_color = highlight
+
+        self._style_symbol_buttons(highlight)
+        self._style_status_buttons()
+        self._update_icon_colors()
+
+    @staticmethod
+    def _tint_surface(widget: QFrame, color: QColor) -> None:
+        palette = widget.palette()
+        palette.setColor(QPalette.ColorRole.Window, color)
+        widget.setAutoFillBackground(True)
+        widget.setPalette(palette)
+
+    def _style_symbol_buttons(self, accent_color: QColor) -> None:
+        style = f"""
+        QToolButton {{
+            background-color: transparent;
+            border: none;
+            border-left: 3px solid transparent;
+            padding: 0;
+        }}
+        QToolButton:checked {{
+            border-left: 3px solid {accent_color.name()};
+            background-color: transparent;
+        }}
+        """
+        for button in self._symbol_buttons:
+            button.setStyleSheet(style)
+
+    def _style_status_buttons(self) -> None:
+        style = """
+        QToolButton {
+            background-color: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 4px;
+        }
+        """
+        for button in self._status_buttons:
+            button.setStyleSheet(style)
+
+    def _update_icon_colors(self) -> None:
+        for binding in self._icon_bindings:
+            path = (
+                binding.checked_icon_path
+                if binding.checked_icon_path and binding.button.isChecked()
+                else binding.icon_path
+            )
+            color = (
+                self._icon_accent_color
+                if binding.accent_on_checked and binding.button.isChecked()
+                else self._icon_base_color
+            )
+            tinted = self._tinted_icon(path, color, binding.button.iconSize())
+            binding.button.setIcon(tinted)
+
+    @staticmethod
+    def _tinted_icon(path: Path, color: QColor, size: QSize) -> QIcon:
+        icon = QIcon(str(path))
+        pixmap = icon.pixmap(size)
+        if pixmap.isNull():
+            return icon
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), color)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _wrap_slider(self, slider: QSlider, parent: QWidget) -> QWidget:
+        shell = QWidget(parent)
+        shell.setFixedHeight(STATUS_ICON_SIZE)
+        layout = QVBoxLayout(shell)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(slider)
+        return shell
+
+    def _create_icon_button(
+        self,
+        parent: QWidget,
+        object_name: str,
+        icon_path: Path,
+        tooltip: str,
+        *,
+        checkable: bool = False,
+        auto_exclusive: bool = False,
+        accent_on_checked: bool = False,
+        checked_icon_path: Path | None = None,
+    ) -> QToolButton:
+        button = QToolButton(parent)
+        button.setObjectName(object_name)
+        button.setCheckable(checkable)
+        button.setAutoExclusive(auto_exclusive and checkable)
+        button.setIconSize(QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE))
+        button.setToolTip(tooltip)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setAutoRaise(True)
+        binding = IconBinding(
+            button=button,
+            icon_path=icon_path,
+            accent_on_checked=accent_on_checked,
+            checked_icon_path=checked_icon_path,
+        )
+        self._icon_bindings.append(binding)
+        if checkable:
+            button.toggled.connect(lambda _=False: self._update_icon_colors())
+        return button
 
 
 class PresentationWindow(QMainWindow):

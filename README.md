@@ -2,7 +2,7 @@
 
 Dieses Verzeichnis enthält den neuen SlideQuest-Prototyp, der langfristig die `MTMT*`-Legacy-Apps ersetzt. Die UI basiert auf **PySide6**, Abhängigkeiten werden vollständig mit **uv** verwaltet.
 
-> Dieses README ist die deutschsprachige Kurzfassung des SlideQuest-Handbuchs in `docs/Handbook.md` (Obsidian-Struktur). Beide Dokumente müssen nach jeder Prozessänderung aktualisiert werden.
+> Dieses README ist die deutschsprachige Kurzfassung des SlideQuest-Handbuchs in `docs/Handbuch.md` (Obsidian-Struktur). Beide Dokumente müssen nach jeder Prozessänderung aktualisiert werden.
 
 ### Handbuch-Highlights
 
@@ -12,6 +12,7 @@ Dieses Verzeichnis enthält den neuen SlideQuest-Prototyp, der langfristig die `
 - Halte `AGENTS.md` (KI-Anweisungen) und dieses README immer synchron mit dem Handbuch.
 - Wenn Layoutbereiche zum Test eingefärbt werden sollen, nutze knallige, klar unterscheidbare Farben.
 - Jede Komponente wird so gebaut, dass sie sich isoliert wiederverwenden lässt (saubere Eingaben, keine versteckten Seiteneffekte).
+- Sämtliche Texte müssen i18n-fähig sein; die gewählte Sprache richtet sich nach der Systemsprache (UI lokalisiert sich automatisch).
 
 ### Systemvoraussetzungen
 
@@ -41,7 +42,7 @@ Der Dev-Watcher nutzt `watchfiles`, um die GUI automatisch neu zu starten, sobal
 - `src/slidequest/app.py` – Einstiegspunkt sowie Verkabelung von Master- und Presentation-Window.
 - `src/slidequest/dev.py` – Watchfiles-basierter Dev-Loop.
 - `AGENTS.md` – Instruktionen für KI-Agenten (englisch, technisch).
-- `docs/Handbook.md` – kanonisches Handbuch (englisch, Obsidian-kompatibel).
+- `docs/Handbuch.md` – kanonisches Handbuch (deutsch, Obsidian-kompatibel).
 - `Tasks.md` – Backlog für umfangreiche Aufgaben, aufgeteilt in promptfähige Teilaufgaben.
 - `assets/` – Referenzmaterial (z. B. Layout-Skizzen).
 - `MTMT*` – Legacy-Projekt (nur lesen, nicht verändern).
@@ -51,7 +52,11 @@ Der Dev-Watcher nutzt `watchfiles`, um die GUI automatisch neu zu starten, sobal
 ![MasterWindow Layout](assets/MasterWindow_GeneralLayout.png)
 
 Die Abbildung zeigt die aktuelle Zwei-\*Drei-Teilung des MasterWindow (StatusBar, SymbolView, Explorer- und Detail-Bereiche mit ihren Subviews) und dient als visuelle Grundlage für weitere Anpassungen.
-Zusätzliche Symbolleisten-Icons (Audio, Dateien, Fenster, Layouts) liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/` bereit.
+
+![MasterWindow Steuerzentrale](assets/MasterWindow_ZentraleSteuerelemente.png)
+
+Die zweite Grafik zoomt auf die Statusbar und die SymbolView: Sie zeigt Navigations-Buttons (Layout, Audio, Note, File) und die Audio-Steuerung (Seekbar, Transport, Volume) als verbindliche Referenz für Beschriftungen und Interaktion.
+Zusätzliche Symbolleisten-Icons (Audio, Dateien, Fenster, Layouts) liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/` bereit. Die SymbolView fungiert als Navigation: Jeder Button öffnet eine Sub-Anwendung im Explorer- und Detailbereich. Der `FileExplorerLauncher` lädt die programmeigene Asset-Library für Bilder, Videos, Audios und Markdown-Dateien; `NoteLauncher`, `AudioExplorerLauncher` und `LayoutExplorerLauncher` folgen demselben Muster für weitere Spezialbereiche.
 
 ### Nächste Schritte
 
