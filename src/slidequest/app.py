@@ -167,8 +167,11 @@ class MasterWindow(QMainWindow):
         self.setMinimumSize(960, 600)
         self._status_bar: QFrame | None = None
         self._symbol_view: QFrame | None = None
+        self._explorer_container: QWidget | None = None
         self._symbol_buttons: list[QToolButton] = []
         self._status_buttons: list[QToolButton] = []
+        self._header_views: list[QFrame] = []
+        self._detail_container: QWidget | None = None
         self._icon_bindings: list[IconBinding] = []
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
@@ -222,6 +225,7 @@ class MasterWindow(QMainWindow):
 
         explorer_container = QWidget(splitter)
         explorer_container.setObjectName("explorerView")
+        self._explorer_container = explorer_container
         explorer_layout = QVBoxLayout(explorer_container)
         explorer_layout.setContentsMargins(0, 0, 0, 0)
         explorer_layout.setSpacing(0)
@@ -229,6 +233,7 @@ class MasterWindow(QMainWindow):
         explorer_header = QFrame(explorer_container)
         explorer_header.setObjectName("explorerHeaderView")
         explorer_header.setFixedHeight(EXPLORER_HEADER_HEIGHT)
+        self._header_views.append(explorer_header)
 
         explorer_footer = QFrame(explorer_container)
         explorer_footer.setObjectName("explorerFooterView")
@@ -250,6 +255,7 @@ class MasterWindow(QMainWindow):
 
         detail_container = QWidget(splitter)
         detail_container.setObjectName("detailView")
+        self._detail_container = detail_container
         detail_layout = QVBoxLayout(detail_container)
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(0)
@@ -257,6 +263,7 @@ class MasterWindow(QMainWindow):
         detail_header = QFrame(detail_container)
         detail_header.setObjectName("detailHeaderView")
         detail_header.setFixedHeight(DETAIL_HEADER_HEIGHT)
+        self._header_views.append(detail_header)
 
         detail_footer = QFrame(detail_container)
         detail_footer.setObjectName("detailFooterView")
@@ -403,6 +410,12 @@ class MasterWindow(QMainWindow):
             self._tint_surface(self._status_bar, surface_color)
         if self._symbol_view is not None:
             self._tint_surface(self._symbol_view, surface_color)
+        if self._explorer_container is not None:
+            explorer_color = window_color.darker(120 if is_dark else 110)
+            self._tint_surface(self._explorer_container, explorer_color)
+        if self._detail_container is not None:
+            detail_color = window_color.darker(115 if is_dark else 108)
+            self._tint_surface(self._detail_container, detail_color)
 
         icon_base = palette.color(
             QPalette.ColorRole.BrightText if is_dark else QPalette.ColorRole.Text
@@ -414,6 +427,12 @@ class MasterWindow(QMainWindow):
 
         self._style_symbol_buttons(highlight)
         self._style_status_buttons()
+        border_color = palette.color(QPalette.ColorRole.Mid)
+        if is_dark:
+            border_color = border_color.lighter(150)
+        else:
+            border_color = border_color.darker(120)
+        self._style_view_borders(border_color)
         self._update_icon_colors()
 
     @staticmethod
@@ -450,6 +469,18 @@ class MasterWindow(QMainWindow):
         """
         for button in self._status_buttons:
             button.setStyleSheet(style)
+
+    def _style_view_borders(self, color: QColor) -> None:
+        css_color = color.name(QColor.HexArgb)
+        left_border = f"border-left: 1px solid {css_color};"
+        explorer_css = left_border + f"border-right: 1px solid {css_color};"
+        if self._explorer_container is not None:
+            self._explorer_container.setStyleSheet(explorer_css)
+        if self._detail_container is not None:
+            self._detail_container.setStyleSheet(left_border)
+        top_border = f"border-top: 1px solid {css_color};"
+        for header in self._header_views:
+            header.setStyleSheet(top_border)
 
     def _update_icon_colors(self) -> None:
         for binding in self._icon_bindings:
