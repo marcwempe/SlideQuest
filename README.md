@@ -1,39 +1,57 @@
-## SlideQuest (PySide6 Prototype)
+## SlideQuest (PySide6-Prototyp)
 
-This directory hosts the new SlideQuest prototype that will eventually replace the `MTMT*` legacy apps. The UI is built with **PySide6** and all dependencies are managed via **uv**.
+Dieses Verzeichnis enthält den neuen SlideQuest-Prototyp, der langfristig die `MTMT*`-Legacy-Apps ersetzt. Die UI basiert auf **PySide6**, Abhängigkeiten werden vollständig mit **uv** verwaltet.
 
-### Requirements
+> Dieses README ist die deutschsprachige Kurzfassung des SlideQuest-Handbuchs in `docs/Handbook.md` (Obsidian-Struktur). Beide Dokumente müssen nach jeder Prozessänderung aktualisiert werden.
+
+### Handbuch-Highlights
+
+- Bevorzuge einfache Lösungen, kleine Dateien und halte die kognitive Komplexität so gering wie möglich.
+- Kläre Rückfragen, bevor du baust, sobald Anforderungen nicht eindeutig sind.
+- Dokumentiere große Features in `Tasks.md`, zerlege sie in promptgerechte Schritte und arbeite sie iterativ ab.
+- Halte `AGENTS.md` (KI-Anweisungen) und dieses README immer synchron mit dem Handbuch.
+- Wenn Layoutbereiche zum Test eingefärbt werden sollen, nutze knallige, klar unterscheidbare Farben.
+- Jede Komponente wird so gebaut, dass sie sich isoliert wiederverwenden lässt (saubere Eingaben, keine versteckten Seiteneffekte).
+
+### Systemvoraussetzungen
 
 - Python 3.12+
-- [uv](https://docs.astral.sh/uv/) installed globally (`pip install uv` or grab a release binary)
+- [uv](https://docs.astral.sh/uv/) (global installiert, z. B. per `pip install uv`)
 
-### Setup
+### Einrichtung
 
 ```bash
 uv sync
 ```
 
-This creates a local `.venv` managed by uv.
+Damit wird ein lokales `.venv` erzeugt und alle Abhängigkeiten installiert.
 
-### Daily commands
+### Tägliche Befehle
 
-| Task | Command |
+| Aufgabe | Befehl |
 | --- | --- |
-| Run the GUI once | `uv run slidequest` / `make run` |
-| Run with hot-reload | `uv run slidequest-dev` / `make dev` |
-| Add a dependency | `uv add <package>` |
+| GUI einmal starten | `uv run slidequest` / `make run` |
+| Hot-Reload starten | `uv run slidequest-dev` / `make dev` |
+| Neue Abhängigkeit hinzufügen | `uv add <paket>` |
 
-The dev watcher uses `watchfiles` to restart the GUI whenever something inside `src/slidequest` or `pyproject.toml` changes.
+Der Dev-Watcher nutzt `watchfiles`, um die GUI automatisch neu zu starten, sobald sich Dateien in `src/slidequest` oder `pyproject.toml` ändern. Die `make`-Targets sind Kurzformen für die entsprechenden uv-Aufrufe (`make run`, `make dev`, `make sync`).
 
-Prefer the Make targets (`make run`, `make dev`, `make sync`) if you want shorter commands; they simply call the matching `uv` invocations.
+### Projektstruktur
 
-### Project layout
+- `src/slidequest/app.py` – Einstiegspunkt sowie Verkabelung von Master- und Presentation-Window.
+- `src/slidequest/dev.py` – Watchfiles-basierter Dev-Loop.
+- `AGENTS.md` – Instruktionen für KI-Agenten (englisch, technisch).
+- `docs/Handbook.md` – kanonisches Handbuch (englisch, Obsidian-kompatibel).
+- `Tasks.md` – Backlog für umfangreiche Aufgaben, aufgeteilt in promptfähige Teilaufgaben.
+- `assets/` – Referenzmaterial (z. B. Layout-Skizzen).
+- `MTMT*` – Legacy-Projekt (nur lesen, nicht verändern).
 
-- `src/slidequest/app.py` – entry window and future navigation logic.
-- `src/slidequest/dev.py` – watchfiles-based dev loop.
-- `AGENTS.md` – shared instructions for Codex / AI contributors.
-- `MTMT*` – legacy Qt/C++ project; do not modify unless explicitly requested.
+### Layout-Referenz
 
-### Next steps
+![MasterWindow Layout](assets/MasterWindow_GeneralLayout.png)
 
-Use `src/slidequest` for new modules (e.g., slide parsing, data providers, layouting). The placeholder UI simply proves that the PySide6 stack is wired up, so you can start replacing it immediately.
+Die Abbildung zeigt die aktuelle Zwei-\*Drei-Teilung des MasterWindow (StatusBar, SymbolView, Explorer- und Detail-Bereiche mit ihren Subviews) und dient als visuelle Grundlage für weitere Anpassungen.
+
+### Nächste Schritte
+
+Neue Module gehören nach `src/slidequest` (z. B. Slide-Parsing, Datenquellen, Layoutlogik). Der aktuelle Doppel-Fenster-Aufbau dient als Grundlage für weitere Features – ersetze die Platzhalter schrittweise durch die produktiven Komponenten.

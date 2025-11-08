@@ -1,27 +1,30 @@
 # SlideQuest Agent Brief
 
-Guidelines for Codex/AI collaborators that hold across sessions.
-
 ## Scope
+- Build in `src/slidequest`; leave `MTMT*` untouched unless the user says otherwise.
+- Keep commits incremental and avoid destructive git.
+- `MTMT/` carries its own `.git`; only add it here (as a submodule) if explicitly requested.
 
-- `src/slidequest` contains the new PySide6 stack. Keep all new Python modules inside this package.
-- `MTMT` and `MTMTContent` are legacy and must stay untouched unless the user explicitly instructs otherwise.
-- Favor incremental, well-explained commits; destructive git commands are off-limits.
+## Principles
+- Prefer simple code and keep cognitive complexity low.
+- Favor smaller, focused files over large ones.
+- Ask the user before acting if their request is ambiguous.
+- Keep `AGENTS.md` and `README.md` current; AGENTS is AI-only, README summarizes the handbook in `docs/`.
+- If a request implies a large change, capture it in `Tasks.md`, split it into prompt-sized subtasks, and tackle them incrementally.
+- [IMPORTANT] Documentation must stay current: user-facing docs (e.g., `README.md`) are written in German (with umlauts), technical docs (`AGENTS.md`, `docs/`, `Tasks.md`) stay in English.
+- Treat every component as a reusable module; design APIs and layouts so they work independently of the surrounding UI.
+- When asked to color layout elements for validation, use bold, high-contrast colors so regions remain unmistakable.
 
 ## Tooling
+- Use uv (`uv add`, `uv sync`, `uv run`) or the matching `make run|dev|sync` shortcuts.
+- Launch the UI with `uv run slidequest`; hot reload via `uv run slidequest-dev` / `make dev`.
+- Prefer `rg` for search and stay in ASCII unless a file already uses Unicode.
 
-- Use **uv** for dependency management: `uv add`, `uv sync`, `uv run ...`.
-- Run the GUI via `uv run slidequest`. Use `uv run slidequest-dev` for automatic reloads powered by `watchfiles`.
-- Prefer `rg` for searches and keep files ASCII unless they already contain Unicode glyphs.
-
-## Coding patterns
-
-- UI entry point lives in `src/slidequest/app.py`. Keep widgets/components modular to simplify later migration to the production client.
-- New configuration or shared instructions belong in markdown files at the repository root so they are easy to discover.
-- Add concise comments only when the intent is not obvious from the code.
+## Coding
+- Entry point: `src/slidequest/app.py`. Keep widgets modular.
+- Shared config/notes live in root markdown files; add comments only when intent is unclear.
+- Maintain the two-window setup: `MasterWindow` (controls) + `PresentationWindow` (slides).
 
 ## Communication
-
-- Summaries should highlight the *why* behind changes before diving into the *what*.
-- Call out TODOs or follow-up ideas explicitly so the next session can pick them up quickly.
-- If unexpected files change (e.g., external tooling rewrites), pause and ask the user before proceeding.
+- Summaries lead with the “why,” then the “what,” and list TODOs/follow-ups.
+- Stop and ask if tools touch unexpected files or instructions are unclear.
