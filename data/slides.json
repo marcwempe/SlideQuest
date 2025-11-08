@@ -5,10 +5,10 @@
       "subtitle": "Vollflächige Anzeige",
       "group": "Standard",
       "layout": {
-        "active_layout": "3S|20:60:20/1R:100/1R:100/1R:100",
+        "active_layout": "2S|60:40/1R:100/1R:100",
         "thumbnail_url": "assets/thumbnails/einspaltig-1.png",
         "content": [
-          "/Users/marcwempe/Downloads/SceneImage_4.png",
+          "/Users/marcwempe/Downloads/SceneImage_8.png",
           "/Users/marcwempe/Downloads/SceneImage_4.png"
         ]
       },

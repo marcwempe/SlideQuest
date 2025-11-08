@@ -95,6 +95,7 @@ Die verfügbaren Slides wohnen in `data/slides.json`. Jede Folie folgt exakt die
 
 - `ExplorerMainView` zeigt die Slides mit Titel, Untertitel, Gruppe sowie einem Thumbnail, das beim letzten Speichern direkt aus dem `PresentationWindow` gerendert wurde.
 - Die `LayoutSelectionList` enthält alle verfügbaren Layouts (`LAYOUT_ITEMS`). Ein Wechsel aktualisiert `layout.active_layout`, bereinigt unpassende Bildzuweisungen und erzeugt automatisch ein neues Thumbnail (`assets/thumbnails/<slug>.png`).
+- Die Bilder hängen ausschließlich am Slide (siehe `layout.content`). Ein Layoutwechsel bestimmt nur die Anordnung; übrig bleibende Assets bleiben im Array erhalten und tauchen wieder auf, sobald ein Layout mit genügend Slots gewählt wird.
 - Immer wenn ein Layout gewechselt wird oder der Nutzer per Drag & Drop ein Bild ersetzt, wird das `PresentationWindow` off-screen gerendert, der Screenshot gespeichert und der Pfad (`thumbnail_url`) im JSON aktualisiert.
 - Medienpfade, Audio-Playlisten sowie Notiz-Notebooks bleiben relative Pfade, damit Projekte portabel bleiben. Alle Texte müssen i18n-kompatibel bleiben; zur Laufzeit richtet sich die Sprachwahl nach der Systemsprache.
 

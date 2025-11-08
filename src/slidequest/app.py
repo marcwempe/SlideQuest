@@ -218,7 +218,6 @@ class SlideLayoutPayload:
     active_layout: str
     thumbnail_url: str = ""
     content: list[str] = field(default_factory=list)
-    variants: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -1306,9 +1305,11 @@ class MasterWindow(QMainWindow):
         if slide is None:
             return
         slide.layout.active_layout = layout_item.layout
-        valid_ids = {cell.area_id for cell in parse_layout_description(layout_item.layout)}
-        slide.images = {idx: path for idx, path in slide.images.items() if idx in valid_ids}
-        slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+        if not slide.layout.content:
+            defaults = self._default_images_for_layout(slide.layout.active_layout)
+            if defaults:
+                slide.layout.content = self._images_to_content(slide.layout.active_layout, defaults)
+        slide.images = self._content_to_images(slide.layout.active_layout, slide.layout.content)
         self._set_current_layout(slide.layout.active_layout, slide.images)
         self._persist_slides()
         self._update_related_layout_selection()
@@ -1331,8 +1332,15 @@ class MasterWindow(QMainWindow):
         normalized = self._normalize_media_path(source)
         if not normalized:
             return
-        slide.images[area_id] = normalized
-        slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+        area_order = self._area_id_order(slide.layout.active_layout)
+        try:
+            slot_index = area_order.index(area_id)
+        except ValueError:
+            return
+        while len(slide.layout.content) <= slot_index:
+            slide.layout.content.append("")
+        slide.layout.content[slot_index] = normalized
+        slide.images = self._content_to_images(slide.layout.active_layout, slide.layout.content)
         self._set_current_layout(slide.layout.active_layout, slide.images)
         self._persist_slides()
         self._refresh_slide_widget(slide)
@@ -1501,10 +1509,17 @@ class MasterWindow(QMainWindow):
             ),
         )
         slide.images = self._content_to_images(slide.layout.active_layout, slide.layout.content)
+        if not slide.images:
+            defaults = self._default_images_for_layout(slide.layout.active_layout)
+            if defaults:
+                slide.layout.content = self._images_to_content(slide.layout.active_layout, defaults)
+                slide.images = defaults.copy()
         return slide
 
     def _slide_to_payload(self, slide: SlideData) -> dict[str, Any]:
-        content = self._images_to_content(slide.layout.active_layout, slide.images)
+        if not slide.layout.content and slide.images:
+            slide.layout.content = self._images_to_content(slide.layout.active_layout, slide.images)
+        content = list(slide.layout.content)
         return {
             "title": slide.title,
             "subtitle": slide.subtitle,
@@ -1649,8 +1664,13 @@ class MasterWindow(QMainWindow):
         slide = item.data(Qt.ItemDataRole.UserRole) if item else None
         self._current_slide = slide
         self._update_detail_header(slide)
-        layout_id = slide.layout.active_layout if slide else ""
-        images = slide.images if slide else {}
+        if slide:
+            slide.images = self._content_to_images(slide.layout.active_layout, slide.layout.content)
+            layout_id = slide.layout.active_layout
+            images = slide.images
+        else:
+            layout_id = ""
+            images = {}
         self._set_current_layout(layout_id, images)
 
     def _update_detail_header(self, slide: SlideData | None) -> None:
