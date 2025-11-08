@@ -34,7 +34,7 @@ Die SymbolView ist eine vertikale Navigationsleiste. Jeder Button öffnet eine e
 | --- | --- | --- |
 | LayoutExplorerLauncher | ![Layout Icon](../assets/icons/bootstrap/layouts/columns-gap.svg) | Layout-Übersicht und Layout-Einstellungen |
 | AudioExplorerLauncher | ![Audio Icon](../assets/icons/bootstrap/audio/volume-up.svg) | Audio-Steuerung, z. B. Pegel & Wiedergabe |
-| NoteLauncher | ![Note Icon](../assets/icons/bootstrap/files/file-earmark.svg) | Notizverwaltung (Markdown, Textsnippets) |
+| NoteExplorerLauncher | ![Note Icon](../assets/icons/bootstrap/files/file-earmark.svg) | Notizverwaltung (Markdown, Textsnippets) |
 | FileExplorerLauncher | ![File Icon](../assets/icons/bootstrap/files/folder.svg) | Programmeigene Asset-Library für Bilder, Videos, Audiofiles und Markdown |
 
 > Hinweis: Icons liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/`. Bei neuen Domains immer dort ablegen und im Handbuch/README erwähnen.

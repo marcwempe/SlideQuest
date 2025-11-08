@@ -42,7 +42,7 @@ SYMBOL_BUTTONS: tuple[tuple[str, Path, str], ...] = (
         "Audio-Einstellungen öffnen",
     ),
     (
-        "NoteLauncher",
+        "NoteExplorerLauncher",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark.svg",
         "Notizübersicht öffnen",
     ),
@@ -57,7 +57,7 @@ STATUS_BUTTONS: tuple[
     tuple[str, Path, str, bool, bool, bool, Path | None]
 ] = (
     (
-        "ShuffleButton",
+        "StatusShuffleButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "shuffle.svg",
         "Shuffle aktivieren",
         True,
@@ -66,7 +66,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "PreviousTrackButton",
+        "StatusPreviousTrackButton",
         PROJECT_ROOT
         / "assets"
         / "icons"
@@ -80,7 +80,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "PlayPauseButton",
+        "StatusPlayPauseButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
         "Play/Pause",
         True,
@@ -89,7 +89,7 @@ STATUS_BUTTONS: tuple[
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "pause-fill.svg",
     ),
     (
-        "StopButton",
+        "StatusStopButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "stop-fill.svg",
         "Stopp",
         False,
@@ -98,7 +98,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "NextTrackButton",
+        "StatusNextTrackButton",
         PROJECT_ROOT
         / "assets"
         / "icons"
@@ -112,7 +112,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "LoopButton",
+        "StatusLoopButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "repeat.svg",
         "Loop aktivieren",
         True,
@@ -121,7 +121,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "MuteButton",
+        "StatusMuteButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-mute.svg",
         "Stummschalten",
         True,
@@ -130,7 +130,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "VolumeDownButton",
+        "StatusVolumeDownButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-down.svg",
         "Leiser",
         False,
@@ -139,7 +139,7 @@ STATUS_BUTTONS: tuple[
         None,
     ),
     (
-        "VolumeUpButton",
+        "StatusVolumeUpButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
         "Lauter",
         False,
@@ -368,7 +368,7 @@ class MasterWindow(QMainWindow):
             self._status_buttons.append(button)
 
         volume_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
-        volume_slider.setObjectName("volumeSlider")
+        volume_slider.setObjectName("StatusVolumeSlider")
         volume_slider.setRange(0, 100)
         volume_slider.setValue(75)
         volume_slider.setFixedWidth(120)
