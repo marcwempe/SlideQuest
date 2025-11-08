@@ -31,6 +31,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
+from slidequest.models.slide import SlideAudioPayload, SlideData, SlideLayoutPayload, SlideNotesPayload
+from slidequest.views.widgets.layout_preview import LayoutPreviewCanvas, LayoutPreviewCard
+
 
 STATUS_BAR_SIZE = 48
 SYMBOL_BUTTON_SIZE = STATUS_BAR_SIZE - 8
@@ -44,6 +48,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 SLIDES_FILE = DATA_DIR / "slides.json"
 THUMBNAIL_DIR = PROJECT_ROOT / "assets" / "thumbnails"
+
+
+def _slugify(value: str) -> str:
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    value = value.strip("-")
+    return value or "slide"
 
 
 def resolve_media_path(path: str) -> str:
@@ -194,247 +205,6 @@ EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (
 
 
 @dataclass
-class LayoutItem:
-    title: str
-    subtitle: str
-    layout: str
-    group: str
-    preview: Path | None = None
-    images: dict[int, str] = field(default_factory=dict)
-
-
-LAYOUT_ITEMS: tuple[LayoutItem, ...] = (
-    LayoutItem("Einspaltig", "Vollflächige Anzeige", "1S|100/1R|100", "Standard"),
-    LayoutItem("Zweispaltig", "Balance 60/40", "2S|60:40/1R:100/1R:100", "Standard"),
-    LayoutItem("Dreispaltig", "Seitenleisten links/rechts", "3S|20:60:20/1R:100/1R:100/1R:100", "Standard"),
-    LayoutItem("Moderator Panel", "Breite Bühne mit vier Slots", "2S|75:25/1R|100/4R|25:25:25:25", "Show"),
-    LayoutItem("Fokus 3-1-3", "Zentrale Bühne mit Sidebars", "3S|20:60:20/2R|50:50/1R|100/2R|50:50", "Show"),
-    LayoutItem("Matrix 3-1-3", "Drei Spalten mit 3/1/3 Reihen", "3S|12.5:75:12.5/3R|34:33:33/1R|100/3R|34:33:33", "Show"),
-)
-
-
-@dataclass
-class SlideLayoutPayload:
-    active_layout: str
-    thumbnail_url: str = ""
-    content: list[str] = field(default_factory=list)
-
-
-@dataclass
-class SlideAudioPayload:
-    playlist: list[str] = field(default_factory=list)
-    effects: list[str] = field(default_factory=list)
-
-
-@dataclass
-class SlideNotesPayload:
-    notebooks: list[str] = field(default_factory=list)
-
-
-@dataclass
-class SlideData:
-    title: str
-    subtitle: str
-    group: str
-    layout: SlideLayoutPayload
-    audio: SlideAudioPayload
-    notes: SlideNotesPayload
-    images: dict[int, str] = field(default_factory=dict)
-
-
-@dataclass
-class LayoutCell:
-    x: float
-    y: float
-    width: float
-    height: float
-    area_id: int = 0
-
-
-@dataclass
-class RatioSpec:
-    ratio: float = 0.0
-    area_id: int = 0
-    has_explicit_id: bool = False
-
-
-def _slugify(value: str) -> str:
-    value = value.lower()
-    value = re.sub(r"[^a-z0-9]+", "-", value)
-    value = value.strip("-")
-    return value or "slide"
-
-
-def _parse_ratios(segment: str) -> list[float]:
-    parts = [part.strip() for part in segment.split(':') if part.strip()]
-    if not parts:
-        return []
-    ratios: list[float] = []
-    wildcard_indices: list[int] = []
-    remaining = 1.0
-    for index, component in enumerate(parts):
-        if component == '*':
-            ratios.append(0.0)
-            wildcard_indices.append(index)
-            continue
-        try:
-            value = float(component)
-        except ValueError:
-            return []
-        value /= 100.0
-        ratios.append(value)
-        remaining -= value
-    if remaining < 0:
-        remaining = 0.0
-    if wildcard_indices:
-        per = remaining / len(wildcard_indices) if wildcard_indices else 0.0
-        for idx in wildcard_indices:
-            ratios[idx] = per
-    total = sum(ratios)
-    if total <= 0:
-        return []
-    ratios = [value / total for value in ratios]
-    return ratios
-
-
-def _parse_ratio_specs(segment: str) -> list[RatioSpec]:
-    parts = [part.strip() for part in segment.split(':') if part.strip()]
-    if not parts:
-        return []
-    specs: list[RatioSpec] = []
-    wildcard_indices: list[int] = []
-    remaining = 1.0
-    for index, component in enumerate(parts):
-        spec = RatioSpec()
-        if '#' in component:
-            before, _, after = component.partition('#')
-            after = after.strip()
-            try:
-                spec.area_id = int(after)
-            except ValueError:
-                return []
-            spec.has_explicit_id = True
-            component = before.strip()
-        if component == '*':
-            if spec.has_explicit_id:
-                return []
-            specs.append(spec)
-            wildcard_indices.append(index)
-            continue
-        try:
-            value = float(component)
-        except ValueError:
-            return []
-        spec.ratio = value / 100.0
-        remaining -= spec.ratio
-        specs.append(spec)
-    if remaining < 0:
-        remaining = 0.0
-    if wildcard_indices:
-        per = remaining / len(wildcard_indices) if wildcard_indices else 0.0
-        for idx in wildcard_indices:
-            specs[idx].ratio = per
-    total = sum(spec.ratio for spec in specs)
-    if total <= 0:
-        return []
-    for spec in specs:
-        spec.ratio /= total
-    return specs
-
-
-def parse_layout_description(layout_description: str) -> list[LayoutCell]:
-    layout_description = layout_description.strip()
-    if not layout_description:
-        return [LayoutCell(0.0, 0.0, 1.0, 1.0, 1)]
-
-    segments = [segment.strip() for segment in layout_description.split('/') if segment.strip()]
-    if not segments:
-        return []
-
-    header_parts = [part.strip() for part in segments[0].split('|')]
-    if len(header_parts) < 2:
-        return []
-
-    columns_token = header_parts[0]
-    if not columns_token.endswith('S'):
-        return []
-    try:
-        column_count = int(columns_token[:-1])
-    except ValueError:
-        return []
-    if column_count <= 0:
-        return []
-
-    column_ratios = _parse_ratios(header_parts[1])
-    if len(column_ratios) != column_count:
-        return []
-
-    columns: list[dict[str, list]] = [
-        {"ratios": [], "specs": []} for _ in range(column_count)
-    ]
-
-    column_index = 0
-    for segment in segments[1:]:
-        if column_index >= column_count:
-            break
-        parts = [part.strip() for part in segment.split('|')]
-        if len(parts) == 2:
-            rows_token, ratios_token = parts
-        else:
-            sep_index = segment.find(':')
-            if sep_index <= 0:
-                return []
-            rows_token = segment[:sep_index].strip()
-            ratios_token = segment[sep_index + 1 :].strip()
-        if not rows_token.endswith('R'):
-            return []
-        try:
-            row_count = int(rows_token[:-1])
-        except ValueError:
-            return []
-        if row_count <= 0:
-            return []
-        row_specs = _parse_ratio_specs(ratios_token)
-        if len(row_specs) != row_count:
-            return []
-        columns[column_index]["ratios"] = [spec.ratio for spec in row_specs]
-        columns[column_index]["specs"] = row_specs
-        column_index += 1
-
-    cells: list[LayoutCell] = []
-    x = 0.0
-    for col in range(column_count):
-        column_width = column_ratios[col]
-        if column_width <= 0:
-            continue
-        row_ratios: list[float] = columns[col]["ratios"] or [1.0]
-        row_specs: list[RatioSpec] = columns[col]["specs"] or [RatioSpec(ratio=ratio) for ratio in row_ratios]
-        y = 0.0
-        for row, ratio in enumerate(row_ratios):
-            if ratio <= 0:
-                continue
-            area_id = row_specs[row].area_id if row < len(row_specs) and row_specs[row].has_explicit_id else 0
-            cells.append(LayoutCell(x, y, column_width, ratio, area_id))
-            y += ratio
-        x += column_width
-
-    if not cells:
-        return [LayoutCell(0.0, 0.0, 1.0, 1.0, 1)]
-
-    used_ids = {cell.area_id for cell in cells if cell.area_id > 0}
-    auto_indices = [index for index, cell in enumerate(cells) if cell.area_id <= 0]
-    auto_indices.sort(key=lambda idx: cells[idx].width * cells[idx].height, reverse=True)
-    candidate = 1
-    for idx in auto_indices:
-        while candidate in used_ids:
-            candidate += 1
-        cells[idx].area_id = candidate
-        used_ids.add(candidate)
-        candidate += 1
-    return cells
-
-
-@dataclass
 class IconBinding:
     button: QToolButton
     icon_path: Path
@@ -541,180 +311,6 @@ class FlowLayout(QLayout):
             line_height = max(line_height, item.sizeHint().height())
 
         return int(y + line_height - rect.y() + bottom)
-
-
-class LayoutPreviewCanvas(QWidget):
-    areaDropped = Signal(int, str)
-
-    def __init__(self, layout_description: str, parent: QWidget | None = None, *, accepts_drop: bool = False) -> None:
-        super().__init__(parent)
-        self._layout_description = layout_description
-        self._cells = parse_layout_description(layout_description)
-        self._selected = False
-        self._area_images: dict[int, QPixmap] = {}
-        self.setAcceptDrops(accepts_drop)
-
-    def set_selected(self, selected: bool) -> None:
-        if self._selected != selected:
-            self._selected = selected
-            self.update()
-
-    def set_layout_description(self, layout_description: str) -> None:
-        layout_description = layout_description or "1S|100/1R|100"
-        if layout_description != self._layout_description:
-            self._layout_description = layout_description
-            self._cells = parse_layout_description(layout_description)
-            self.update()
-
-    def set_area_images(self, images: dict[int, str] | None) -> None:
-        new_map: dict[int, QPixmap] = {}
-        if images:
-            for area_id, path in images.items():
-                pix = QPixmap(path)
-                if not pix.isNull():
-                    new_map[area_id] = pix
-        self._area_images = new_map
-        self.update()
-
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), Qt.transparent)
-        border_color = QColor("#000000")
-        padding = 4
-        available_width = max(self.width() - padding * 2, 1)
-        available_height = max(self.height() - padding * 2, 1)
-        for cell in self._cells:
-            x = padding + cell.x * available_width
-            y = padding + cell.y * available_height
-            w = cell.width * available_width
-            h = cell.height * available_height
-            rect = QRectF(x, y, w, h)
-            if pix := self._area_images.get(cell.area_id):
-                pix_w = pix.width()
-                pix_h = pix.height()
-                if pix_w > 0 and pix_h > 0 and rect.width() > 0 and rect.height() > 0:
-                    target_ratio = rect.width() / rect.height()
-                    pix_ratio = pix_w / pix_h
-                    if pix_ratio > target_ratio:
-                        crop_width = int(pix_h * target_ratio)
-                        x_offset = max((pix_w - crop_width) // 2, 0)
-                        source = QRect(x_offset, 0, crop_width, pix_h)
-                    else:
-                        crop_height = int(pix_w / target_ratio)
-                        y_offset = max((pix_h - crop_height) // 2, 0)
-                        source = QRect(0, y_offset, pix_w, crop_height)
-                    painter.drawPixmap(rect, pix, source)
-            pen = QPen(border_color, 2 if self._selected else 1)
-            painter.setPen(pen)
-            painter.drawRect(rect)
-        painter.end()
-
-    def dragEnterEvent(self, event) -> None:  # type: ignore[override]
-        if not self.acceptDrops():
-            event.ignore()
-            return
-        if event.mimeData().hasUrls() or event.mimeData().hasImage() or event.mimeData().hasText():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dragMoveEvent(self, event) -> None:  # type: ignore[override]
-        if self.acceptDrops():
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event) -> None:  # type: ignore[override]
-        if not self.acceptDrops():
-            event.ignore()
-            return
-        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
-        area_id = self._area_at_position(pos)
-        if area_id <= 0:
-            event.ignore()
-            return
-        source = ""
-        mime = event.mimeData()
-        if mime.hasUrls():
-            url = mime.urls()[0]
-            source = url.toLocalFile() or url.toString()
-        elif mime.hasImage():
-            image = QPixmap.fromImage(mime.imageData())
-            temp_path = str(PROJECT_ROOT / "temp_drop_image.png")
-            image.save(temp_path)
-            source = temp_path
-        elif mime.hasText():
-            source = mime.text().strip()
-        if not source:
-            event.ignore()
-            return
-        self.areaDropped.emit(area_id, source)
-        event.acceptProposedAction()
-
-    def _area_at_position(self, pos) -> int:
-        padding = 4
-        available_width = max(self.width() - padding * 2, 1)
-        available_height = max(self.height() - padding * 2, 1)
-        for cell in self._cells:
-            rect = QRectF(
-                padding + cell.x * available_width,
-                padding + cell.y * available_height,
-                cell.width * available_width,
-                cell.height * available_height,
-            )
-            if rect.contains(pos):
-                return cell.area_id or 0
-        return 0
-
-
-class LayoutPreviewCard(QFrame):
-    clicked = Signal(LayoutItem)
-
-    def __init__(self, layout_item: LayoutItem, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._layout_item = layout_item
-        self._selected = False
-        self.setObjectName(f"layoutCard_{layout_item.title.replace(' ', '_')}")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedSize(160, 140)
-
-        frame_layout = QVBoxLayout(self)
-        frame_layout.setContentsMargins(8, 8, 8, 8)
-        frame_layout.setSpacing(6)
-
-        self._canvas = LayoutPreviewCanvas(layout_item.layout, self)
-        self._canvas.setFixedSize(140, 90)
-        frame_layout.addWidget(self._canvas, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        title_label = QLabel(layout_item.title, self)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet("font-size: 12px; color: #dbe3ff;")
-        frame_layout.addWidget(title_label)
-
-        self._update_styles()
-
-    @property
-    def layout_id(self) -> str:
-        return self._layout_item.layout
-
-    def setSelected(self, selected: bool) -> None:
-        if self._selected != selected:
-            self._selected = selected
-            self._canvas.set_selected(selected)
-            self._update_styles()
-
-    def _update_styles(self) -> None:
-        bg = "#2f3645" if self._selected else "#24262b"
-        border = "#4c8bf5" if self._selected else "#3a3d42"
-        self.setStyleSheet(
-            f"QFrame#{self.objectName()} {{ background-color: {bg}; border: 1px solid {border}; border-radius: 10px; }}"
-        )
-
-    def mousePressEvent(self, event) -> None:  # type: ignore[override]
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self._layout_item)
-        super().mousePressEvent(event)
 
 
 class MasterWindow(QMainWindow):
@@ -891,6 +487,10 @@ class MasterWindow(QMainWindow):
             size=SYMBOL_BUTTON_SIZE,
             registry=self._crud_buttons,
         )
+        if create_button := self._crud_button_map.get("ExplorerCreateButton"):
+            create_button.clicked.connect(self._handle_create_slide)
+        if delete_button := self._crud_button_map.get("ExplorerDeleteButton"):
+            delete_button.clicked.connect(self._handle_delete_slide)
 
         detail_container = QWidget(splitter)
         detail_container.setObjectName("detailView")
@@ -1196,10 +796,11 @@ class MasterWindow(QMainWindow):
 
     def _style_explorer_controls(self, border_color: QColor) -> None:
         css_color = border_color.name(QColor.HexArgb)
+        text_color = self.palette().color(QPalette.ColorRole.Text).name(QColor.HexArgb)
         if self._search_input is not None:
             self._search_input.setStyleSheet(
                 f"QLineEdit {{ background: transparent; border: 1px solid {css_color};"
-                "border-radius: 8px; padding: 0 10px; color: palette(text); }}"
+                f"border-radius: 8px; padding: 0 10px; color: {text_color}; }}"
             )
         button_style = """
         QToolButton {
@@ -1215,14 +816,16 @@ class MasterWindow(QMainWindow):
 
     def _style_detail_inputs(self, border_color: QColor) -> None:
         css_color = border_color.name(QColor.HexArgb)
+        text_color = self.palette().color(QPalette.ColorRole.Text).name(QColor.HexArgb)
+        base_color = self.palette().color(QPalette.ColorRole.Base).name(QColor.HexArgb)
         lineedit_style = (
             f"QLineEdit {{ background: transparent; border: 1px solid {css_color};"
-            "border-radius: 8px; padding: 0 10px; color: palette(text); }}"
+            f"border-radius: 8px; padding: 0 10px; color: {text_color}; }}"
         )
         combo_style = (
             f"QComboBox {{ background: transparent; border: 1px solid {css_color};"
-            "border-radius: 8px; padding: 0 10px; color: palette(text); }}"
-            "QComboBox QAbstractItemView { background-color: palette(base); }"
+            f"border-radius: 8px; padding: 0 10px; color: {text_color}; }}"
+            f"QComboBox QAbstractItemView {{ background-color: {base_color}; }}"
         )
         if self._detail_title_input:
             self._detail_title_input.setStyleSheet(lineedit_style)
@@ -1342,6 +945,51 @@ class MasterWindow(QMainWindow):
         self._persist_slides()
         self._refresh_slide_widget(slide)
         self._regenerate_current_slide_thumbnail()
+
+    def _handle_create_slide(self) -> None:
+        layout_id = (
+            self._current_slide.layout.active_layout
+            if self._current_slide
+            else (LAYOUT_ITEMS[0].layout if LAYOUT_ITEMS else "1S|100/1R|100")
+        )
+        group = (
+            self._current_slide.group
+            if self._current_slide
+            else (LAYOUT_ITEMS[0].group if LAYOUT_ITEMS else "All")
+        )
+        new_slide = SlideData(
+            title="Neue Folie",
+            subtitle="",
+            group=group,
+            layout=SlideLayoutPayload(layout_id, "", []),
+            audio=SlideAudioPayload(),
+            notes=SlideNotesPayload(),
+            images={},
+        )
+        defaults = self._default_images_for_layout(layout_id)
+        if defaults:
+            new_slide.images = defaults.copy()
+            new_slide.layout.content = self._images_to_content(layout_id, new_slide.images)
+        self._slides.append(new_slide)
+        self._persist_slides()
+        self._populate_slide_list()
+        if self._slide_list:
+            self._slide_list.setCurrentRow(self._slide_list.count() - 1)
+
+    def _handle_delete_slide(self) -> None:
+        if not self._slides or not self._slide_list:
+            return
+        if len(self._slides) == 1:
+            return
+        row = self._slide_list.currentRow()
+        if row < 0 or row >= len(self._slides):
+            row = len(self._slides) - 1
+        self._slides.pop(row)
+        self._persist_slides()
+        self._populate_slide_list()
+        new_index = min(row, len(self._slides) - 1)
+        if self._slide_list.count():
+            self._slide_list.setCurrentRow(new_index)
 
     def _save_detail_changes(self) -> None:
         slide = self._current_slide
