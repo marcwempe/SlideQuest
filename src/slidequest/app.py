@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter, QPixmap, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -580,7 +580,7 @@ class LayoutPreviewCanvas(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), Qt.transparent)
-        border_color = QColor("#4c8bf5" if self._selected else "#8ab4f8")
+        border_color = QColor("#000000")
         padding = 4
         available_width = max(self.width() - padding * 2, 1)
         available_height = max(self.height() - padding * 2, 1)
@@ -605,7 +605,8 @@ class LayoutPreviewCanvas(QWidget):
                         y_offset = max((pix_h - crop_height) // 2, 0)
                         source = QRect(0, y_offset, pix_w, crop_height)
                     painter.drawPixmap(rect, pix, source)
-            painter.setPen(border_color)
+            pen = QPen(border_color, 2 if self._selected else 1)
+            painter.setPen(pen)
             painter.drawRect(rect)
         painter.end()
 
@@ -1332,11 +1333,7 @@ class MasterWindow(QMainWindow):
         normalized = self._normalize_media_path(source)
         if not normalized:
             return
-        area_order = self._area_id_order(slide.layout.active_layout)
-        try:
-            slot_index = area_order.index(area_id)
-        except ValueError:
-            return
+        slot_index = max(area_id - 1, 0)
         while len(slide.layout.content) <= slot_index:
             slide.layout.content.append("")
         slide.layout.content[slot_index] = normalized
@@ -1561,33 +1558,34 @@ class MasterWindow(QMainWindow):
 
     def _content_to_images(self, layout_id: str, content: list[str]) -> dict[int, str]:
         images: dict[int, str] = {}
-        area_ids = self._area_id_order(layout_id)
-        for path, area_id in zip(content or [], area_ids):
+        if not content:
+            return images
+        for index, path in enumerate(content):
             if path:
-                images[area_id] = path
+                images[index + 1] = path
         return images
 
     def _images_to_content(self, layout_id: str, images: dict[int, str]) -> list[str]:
-        ordered = []
-        for area_id in self._area_id_order(layout_id):
-            path = images.get(area_id)
-            if path:
-                ordered.append(path)
-        return ordered
+        if not images:
+            return []
+        max_area = max((area_id for area_id in images.keys() if area_id > 0), default=0)
+        if max_area <= 0:
+            return []
+        content = ["" for _ in range(max_area)]
+        for area_id, path in images.items():
+            if area_id <= 0 or not path:
+                continue
+            index = area_id - 1
+            if index >= len(content):
+                content.extend([""] * (index + 1 - len(content)))
+            content[index] = path
+        return content
 
     def _default_images_for_layout(self, layout_id: str) -> dict[int, str]:
         for item in LAYOUT_ITEMS:
             if item.layout == layout_id:
                 return item.images.copy()
         return {}
-
-    def _area_id_order(self, layout_id: str) -> list[int]:
-        cells = parse_layout_description(layout_id or "1S|100/1R|100")
-        seen: list[int] = []
-        for cell in cells:
-            if cell.area_id not in seen:
-                seen.append(cell.area_id)
-        return seen
 
     def _ensure_data_dirs(self) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)

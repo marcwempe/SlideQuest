@@ -67,7 +67,7 @@ Die dritte Grafik kombiniert SymbolView, Statusbar und Explorer-Header/-Footer a
 ### Slides & Datenmodell
 
 - `ExplorerMainView` listet jetzt Slides, nicht mehr Layoutvorlagen. Angezeigt werden Titel, Untertitel, Gruppe und ein Thumbnail des letzten gespeicherten Layout-Arrangements.
-- Die Daten stammen aus `data/slides.json` und folgen exakt der im Handbuch dokumentierten Struktur (Layout-Block mit `active_layout`, `thumbnail_url`, `content`, dazu Audio-Playlists und Notiz-Links). Die Einträge unter `content` gehören zum Slide selbst – beim Layoutwechsel wird nur die Darstellung, nicht der Bestand, verändert.
+- Die Daten stammen aus `data/slides.json` und folgen exakt der im Handbuch dokumentierten Struktur (Layout-Block mit `active_layout`, `thumbnail_url`, `content`, dazu Audio-Playlists und Notiz-Links). Die Einträge unter `content` gehören zum Slide selbst – Index `i` repräsentiert Layoutbereich `#i`. Beim Layoutwechsel wird nur die Darstellung, nicht der Bestand, verändert.
 - Die `LayoutSelectionList` enthält sämtliche Templates (`LAYOUT_ITEMS`). Ein Wechsel setzt `layout.active_layout`, verwirft nicht mehr passende Drop-Zuweisungen und erzeugt direkt ein neues Thumbnail, indem das `PresentationWindow` off-screen gerendert und in `assets/thumbnails/<slug>.png` gespeichert wird.
 - Gleiches gilt beim Ersetzen einzelner Bereiche per Drag & Drop: Die Bildpfade werden relativ zum Projekt gespeichert, der neue Zustand persistent aktualisiert und sofort als Thumbnail angezeigt.
 
