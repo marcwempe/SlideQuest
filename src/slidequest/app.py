@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter
 from PySide6.QtWidgets import (
     QApplication,
@@ -53,6 +53,7 @@ SYMBOL_BUTTONS: tuple[tuple[str, Path, str], ...] = (
         "Dateiexplorer öffnen",
     ),
 )
+PRESENTATION_TOGGLE_ICON = PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "window" / "window-fullscreen.svg"
 
 STATUS_BUTTONS: tuple[
     tuple[str, Path, str, bool, bool, bool, Path | None]
@@ -176,7 +177,9 @@ class MasterWindow(QMainWindow):
         self.setMinimumSize(960, 600)
         self._status_bar: QFrame | None = None
         self._symbol_view: QFrame | None = None
+        self._presentation_button: QToolButton | None = None
         self._explorer_container: QWidget | None = None
+        self._presentation_window: PresentationWindow | None = None
         self._symbol_buttons: list[QToolButton] = []
         self._status_buttons: list[QToolButton] = []
         self._header_views: list[QFrame] = []
@@ -230,6 +233,19 @@ class MasterWindow(QMainWindow):
             symbol_layout.addWidget(button)
             self._symbol_buttons.append(button)
         symbol_layout.addStretch(1)
+
+        presentation_button = self._create_icon_button(
+            symbol_view,
+            "PresentationToggleButton",
+            PRESENTATION_TOGGLE_ICON,
+            "Präsentationsfenster anzeigen",
+            checkable=False,
+        )
+        presentation_button.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+        presentation_button.clicked.connect(self._show_presentation_window)
+        symbol_layout.addWidget(presentation_button)
+        self._symbol_buttons.append(presentation_button)
+        self._presentation_button = presentation_button
 
         splitter = QSplitter(Qt.Orientation.Horizontal, viewport)
         splitter.setObjectName("contentSplitter")
@@ -633,9 +649,23 @@ class MasterWindow(QMainWindow):
             button.toggled.connect(lambda _=False: self._update_icon_colors())
         return button
 
+    def _show_presentation_window(self) -> None:
+        window = self._presentation_window
+        if window is None or window.isVisible():
+            return
+        window.show()
+        if self._presentation_button is not None:
+            self._presentation_button.setEnabled(False)
+
+    def _on_presentation_closed(self) -> None:
+        if self._presentation_button is not None:
+            self._presentation_button.setEnabled(True)
+
 
 class PresentationWindow(QMainWindow):
     """Second window dedicated to rendering slides."""
+
+    closed = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -646,6 +676,10 @@ class PresentationWindow(QMainWindow):
     def _setup_placeholder(self) -> None:
         self.setCentralWidget(QWidget(self))
 
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        super().closeEvent(event)
+        self.closed.emit()
+
 
 def main() -> None:
     """Launch the PySide6 GUI."""
@@ -655,8 +689,10 @@ def main() -> None:
         app = QApplication(sys.argv)
     master = MasterWindow()
     presentation = PresentationWindow()
+    presentation.hide()
+    master._presentation_window = presentation
+    presentation.closed.connect(master._on_presentation_closed)
     master.show()
-    presentation.show()
     if owns_event_loop:
         assert app is not None
         sys.exit(app.exec())
