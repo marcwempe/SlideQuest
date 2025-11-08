@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable, Iterable
 
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter
@@ -31,43 +32,64 @@ EXPLORER_FOOTER_HEIGHT = EXPLORER_HEADER_HEIGHT
 DETAIL_HEADER_HEIGHT = 60
 DETAIL_FOOTER_HEIGHT = DETAIL_HEADER_HEIGHT
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SYMBOL_BUTTONS: tuple[tuple[str, Path, str], ...] = (
-    (
+@dataclass(frozen=True)
+class ButtonSpec:
+    name: str
+    icon: Path
+    tooltip: str
+    checkable: bool = False
+    auto_exclusive: bool = False
+    accent_on_checked: bool = False
+    checked_icon: Path | None = None
+    checked_by_default: bool = False
+
+
+SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
+    ButtonSpec(
         "LayoutExplorerLauncher",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "layouts" / "columns-gap.svg",
         "Layoutübersicht öffnen",
+        checkable=True,
+        auto_exclusive=True,
     ),
-    (
+    ButtonSpec(
         "AudioExplorerLauncher",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
         "Audio-Einstellungen öffnen",
+        checkable=True,
+        auto_exclusive=True,
     ),
-    (
+    ButtonSpec(
         "NoteExplorerLauncher",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark.svg",
         "Notizübersicht öffnen",
+        checkable=True,
+        auto_exclusive=True,
     ),
-    (
+    ButtonSpec(
         "FileExplorerLauncher",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "folder.svg",
         "Dateiexplorer öffnen",
+        checkable=True,
+        auto_exclusive=True,
     ),
 )
-PRESENTATION_TOGGLE_ICON = PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "window" / "window-fullscreen.svg"
 
-STATUS_BUTTONS: tuple[
-    tuple[str, Path, str, bool, bool, bool, Path | None]
-] = (
-    (
+PRESENTATION_BUTTON_SPEC = ButtonSpec(
+    "PresentationToggleButton",
+    PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "window" / "window-fullscreen.svg",
+    "Präsentationsfenster anzeigen",
+)
+
+STATUS_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
+    ButtonSpec(
         "StatusShuffleButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "shuffle.svg",
         "Shuffle aktivieren",
-        True,
-        False,
-        False,
-        None,
+        checkable=True,
+        accent_on_checked=True,
     ),
-    (
+    ButtonSpec(
         "StatusPreviousTrackButton",
         PROJECT_ROOT
         / "assets"
@@ -76,30 +98,26 @@ STATUS_BUTTONS: tuple[
         / "audio"
         / "skip-backward-fill.svg",
         "Vorheriger Titel",
-        False,
-        False,
-        False,
-        None,
     ),
-    (
+    ButtonSpec(
         "StatusPlayPauseButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
         "Play/Pause",
-        True,
-        False,
-        False,
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "pause-fill.svg",
+        checkable=True,
+        accent_on_checked=True,
+        checked_icon=PROJECT_ROOT
+        / "assets"
+        / "icons"
+        / "bootstrap"
+        / "audio"
+        / "pause-fill.svg",
     ),
-    (
+    ButtonSpec(
         "StatusStopButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "stop-fill.svg",
         "Stopp",
-        False,
-        False,
-        False,
-        None,
     ),
-    (
+    ButtonSpec(
         "StatusNextTrackButton",
         PROJECT_ROOT
         / "assets"
@@ -108,48 +126,39 @@ STATUS_BUTTONS: tuple[
         / "audio"
         / "skip-forward-fill.svg",
         "Nächster Titel",
-        False,
-        False,
-        False,
-        None,
     ),
-    (
+    ButtonSpec(
         "StatusLoopButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "repeat.svg",
         "Loop aktivieren",
-        True,
-        False,
-        True,
-        None,
+        checkable=True,
+        accent_on_checked=True,
+        checked_by_default=True,
     ),
-    (
+    ButtonSpec(
         "StatusMuteButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-mute.svg",
         "Stummschalten",
-        True,
-        False,
-        False,
-        None,
+        checkable=True,
+        accent_on_checked=True,
     ),
-    (
+    ButtonSpec(
         "StatusVolumeDownButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-down.svg",
         "Leiser",
-        False,
-        False,
-        False,
-        None,
     ),
-    (
+    ButtonSpec(
         "StatusVolumeUpButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
         "Lauter",
-        False,
-        False,
-        False,
-        None,
     ),
 )
+
+STATUS_VOLUME_BUTTONS = {
+    "StatusMuteButton",
+    "StatusVolumeDownButton",
+    "StatusVolumeUpButton",
+}
 
 ACTION_ICONS = {
     "search": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "search.svg",
@@ -159,6 +168,12 @@ ACTION_ICONS = {
     "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
 }
 
+EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (
+    ButtonSpec("ExplorerCreateButton", ACTION_ICONS["create"], "Neuen Eintrag anlegen"),
+    ButtonSpec("ExplorerEditButton", ACTION_ICONS["edit"], "Auswahl bearbeiten"),
+    ButtonSpec("ExplorerDeleteButton", ACTION_ICONS["delete"], "Auswahl löschen"),
+)
+
 
 @dataclass
 class IconBinding:
@@ -166,6 +181,30 @@ class IconBinding:
     icon_path: Path
     accent_on_checked: bool = False
     checked_icon_path: Path | None = None
+
+
+class IconToolButton(QToolButton):
+    hoverChanged = Signal(bool)
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._hovered = False
+
+    @property
+    def is_hovered(self) -> bool:
+        return self._hovered
+
+    def enterEvent(self, event) -> None:  # type: ignore[override]
+        if not self._hovered:
+            self._hovered = True
+            self.hoverChanged.emit(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # type: ignore[override]
+        if self._hovered:
+            self._hovered = False
+            self.hoverChanged.emit(False)
+        super().leaveEvent(event)
 
 
 class MasterWindow(QMainWindow):
@@ -181,13 +220,18 @@ class MasterWindow(QMainWindow):
         self._explorer_container: QWidget | None = None
         self._presentation_window: PresentationWindow | None = None
         self._symbol_buttons: list[QToolButton] = []
+        self._symbol_button_map: dict[str, QToolButton] = {}
         self._status_buttons: list[QToolButton] = []
+        self._status_button_map: dict[str, QToolButton] = {}
         self._header_views: list[QFrame] = []
         self._detail_container: QWidget | None = None
         self._line_edit_actions: list[tuple[QAction, Path]] = []
         self._search_input: QLineEdit | None = None
         self._filter_button: QToolButton | None = None
         self._crud_buttons: list[QToolButton] = []
+        self._volume_slider: QSlider | None = None
+        self._volume_button_map: dict[str, QToolButton] = {}
+        self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
@@ -219,32 +263,22 @@ class MasterWindow(QMainWindow):
         symbol_layout = QVBoxLayout(symbol_view)
         symbol_layout.setContentsMargins(4, 4, 4, 4)
         symbol_layout.setSpacing(8)
-        for name, icon_path, tooltip in SYMBOL_BUTTONS:
-            button = self._create_icon_button(
-                parent=symbol_view,
-                object_name=name,
-                icon_path=icon_path,
-                tooltip=tooltip,
-                checkable=True,
-                auto_exclusive=True,
-                accent_on_checked=False,
-            )
-            button.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
-            symbol_layout.addWidget(button)
-            self._symbol_buttons.append(button)
-        symbol_layout.addStretch(1)
-
-        presentation_button = self._create_icon_button(
+        self._symbol_button_map = self._build_buttons(
             symbol_view,
-            "PresentationToggleButton",
-            PRESENTATION_TOGGLE_ICON,
-            "Präsentationsfenster anzeigen",
-            checkable=False,
+            symbol_layout,
+            SYMBOL_BUTTON_SPECS,
+            size=SYMBOL_BUTTON_SIZE,
+            registry=self._symbol_buttons,
         )
-        presentation_button.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+        symbol_layout.addStretch(1)
+        presentation_button = self._build_buttons(
+            symbol_view,
+            symbol_layout,
+            (PRESENTATION_BUTTON_SPEC,),
+            size=SYMBOL_BUTTON_SIZE,
+            registry=self._symbol_buttons,
+        )[PRESENTATION_BUTTON_SPEC.name]
         presentation_button.clicked.connect(self._show_presentation_window)
-        symbol_layout.addWidget(presentation_button)
-        self._symbol_buttons.append(presentation_button)
         self._presentation_button = presentation_button
 
         splitter = QSplitter(Qt.Orientation.Horizontal, viewport)
@@ -255,6 +289,7 @@ class MasterWindow(QMainWindow):
         explorer_container = QWidget(splitter)
         explorer_container.setObjectName("explorerView")
         self._explorer_container = explorer_container
+        explorer_container.setMinimumWidth(250)
         explorer_layout = QVBoxLayout(explorer_container)
         explorer_layout.setContentsMargins(0, 0, 0, 0)
         explorer_layout.setSpacing(0)
@@ -312,24 +347,18 @@ class MasterWindow(QMainWindow):
         explorer_footer_layout.setContentsMargins(8, 4, 8, 4)
         explorer_footer_layout.setSpacing(8)
         explorer_footer_layout.addStretch(1)
-        for name, key, tooltip in (
-            ("ExplorerCreateButton", "create", "Neuen Eintrag anlegen"),
-            ("ExplorerEditButton", "edit", "Auswahl bearbeiten"),
-            ("ExplorerDeleteButton", "delete", "Auswahl löschen"),
-        ):
-            btn = self._create_icon_button(
-                explorer_footer,
-                name,
-                ACTION_ICONS[key],
-                tooltip,
-            )
-            btn.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
-            self._crud_buttons.append(btn)
-            explorer_footer_layout.addWidget(btn)
+        self._build_buttons(
+            explorer_footer,
+            explorer_footer_layout,
+            EXPLORER_CRUD_SPECS,
+            size=SYMBOL_BUTTON_SIZE,
+            registry=self._crud_buttons,
+        )
 
         detail_container = QWidget(splitter)
         detail_container.setObjectName("detailView")
         self._detail_container = detail_container
+        detail_container.setMinimumWidth(250)
         detail_layout = QVBoxLayout(detail_container)
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(0)
@@ -361,7 +390,7 @@ class MasterWindow(QMainWindow):
         splitter.addWidget(detail_container)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 4)
-        splitter.setSizes([256, max(self.width() - 256, 300)])
+        splitter.setSizes([128, max(self.width() - 128, 300)])
 
         viewport_layout.addWidget(symbol_view)
         viewport_layout.addWidget(splitter, 1)
@@ -421,33 +450,21 @@ class MasterWindow(QMainWindow):
         volume_layout.setSpacing(4)
         volume_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        for (
-            name,
-            icon_path,
-            tooltip,
-            checkable,
-            auto_exclusive,
-            checked_by_default,
-            checked_icon_path,
-        ) in STATUS_BUTTONS:
-            button = self._create_icon_button(
-                parent=status_bar,
-                object_name=name,
-                icon_path=icon_path,
-                tooltip=tooltip,
-                checkable=checkable,
-                auto_exclusive=auto_exclusive,
-                accent_on_checked=True,
-                checked_icon_path=checked_icon_path,
-            )
-            if checked_by_default:
-                button.setChecked(True)
-            button.setFixedSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
-            if name in {"MuteButton", "VolumeDownButton", "VolumeUpButton"}:
-                volume_layout.addWidget(button)
-            else:
-                transport_layout.addWidget(button)
-            self._status_buttons.append(button)
+        def status_layout(spec: ButtonSpec) -> QHBoxLayout:
+            return volume_layout if spec.name in STATUS_VOLUME_BUTTONS else transport_layout
+
+        status_button_map = self._build_buttons(
+            status_bar,
+            transport_layout,
+            STATUS_BUTTON_SPECS,
+            size=STATUS_ICON_SIZE,
+            registry=self._status_buttons,
+            layout_getter=status_layout,
+        )
+        self._status_button_map = status_button_map
+        self._volume_button_map = {
+            name: btn for name, btn in status_button_map.items() if name in STATUS_VOLUME_BUTTONS
+        }
 
         volume_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
         volume_slider.setObjectName("StatusVolumeSlider")
@@ -455,10 +472,13 @@ class MasterWindow(QMainWindow):
         volume_slider.setValue(75)
         volume_slider.setFixedWidth(120)
         volume_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
+        self._volume_slider = volume_slider
         volume_slider_shell = self._wrap_slider(volume_slider, status_bar)
         if (volume_shell_layout := volume_slider_shell.layout()) is not None:
             volume_shell_layout.setContentsMargins(4, 5, 4, 0)
         volume_layout.insertWidget(2, volume_slider_shell)
+
+        self._wire_volume_buttons(self._volume_button_map)
 
         right_layout.addLayout(transport_layout)
         right_layout.addSpacing(16)
@@ -589,6 +609,8 @@ class MasterWindow(QMainWindow):
                 if binding.accent_on_checked and binding.button.isChecked()
                 else self._icon_base_color
             )
+            if isinstance(binding.button, IconToolButton) and binding.button.is_hovered:
+                color = color.lighter(150)
             tinted = self._tinted_icon(path, color, binding.button.iconSize())
             binding.button.setIcon(tinted)
         for action, path in self._line_edit_actions:
@@ -596,6 +618,36 @@ class MasterWindow(QMainWindow):
                 path, self._icon_base_color, QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE)
             )
             action.setIcon(tinted)
+
+    def _wire_volume_buttons(self, buttons: dict[str, QToolButton]) -> None:
+        slider = self._volume_slider
+        if slider is None:
+            return
+
+        def adjust(delta: int) -> None:
+            slider.setValue(max(0, min(100, slider.value() + delta)))
+
+        mute = buttons.get("StatusMuteButton")
+        if mute is not None:
+            def handle_mute(checked: bool) -> None:
+                if checked:
+                    self._last_volume_value = slider.value()
+                    slider.setValue(0)
+                else:
+                    slider.setValue(self._last_volume_value)
+
+            mute.toggled.connect(handle_mute)
+
+        def remember_volume(value: int) -> None:
+            if mute is None or not mute.isChecked():
+                self._last_volume_value = value
+
+        slider.valueChanged.connect(remember_volume)
+
+        if vol_down := buttons.get("StatusVolumeDownButton"):
+            vol_down.clicked.connect(lambda: adjust(-5))
+        if vol_up := buttons.get("StatusVolumeUpButton"):
+            vol_up.clicked.connect(lambda: adjust(5))
 
     @staticmethod
     def _tinted_icon(path: Path, color: QColor, size: QSize) -> QIcon:
@@ -630,7 +682,7 @@ class MasterWindow(QMainWindow):
         accent_on_checked: bool = False,
         checked_icon_path: Path | None = None,
     ) -> QToolButton:
-        button = QToolButton(parent)
+        button = IconToolButton(parent)
         button.setObjectName(object_name)
         button.setCheckable(checkable)
         button.setAutoExclusive(auto_exclusive and checkable)
@@ -647,7 +699,39 @@ class MasterWindow(QMainWindow):
         self._icon_bindings.append(binding)
         if checkable:
             button.toggled.connect(lambda _=False: self._update_icon_colors())
+        button.hoverChanged.connect(lambda _=False: self._update_icon_colors())
         return button
+
+    def _build_buttons(
+        self,
+        parent: QWidget,
+        layout: QHBoxLayout | QVBoxLayout,
+        specs: Iterable[ButtonSpec],
+        *,
+        size: int,
+        registry: list[QToolButton],
+        layout_getter: Callable[[ButtonSpec], QHBoxLayout | QVBoxLayout] | None = None,
+    ) -> dict[str, QToolButton]:
+        created: dict[str, QToolButton] = {}
+        for spec in specs:
+            target_layout = layout_getter(spec) if layout_getter else layout
+            button = self._create_icon_button(
+                parent,
+                spec.name,
+                spec.icon,
+                spec.tooltip,
+                checkable=spec.checkable,
+                auto_exclusive=spec.auto_exclusive,
+                accent_on_checked=spec.accent_on_checked,
+                checked_icon_path=spec.checked_icon,
+            )
+            button.setFixedSize(size, size)
+            if spec.checked_by_default:
+                button.setChecked(True)
+            target_layout.addWidget(button)
+            registry.append(button)
+            created[spec.name] = button
+        return created
 
     def _show_presentation_window(self) -> None:
         window = self._presentation_window
