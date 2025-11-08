@@ -14,6 +14,7 @@
 - [IMPORTANT] Documentation must stay current: user-facing docs (e.g., `README.md`) are written in German (with umlauts), technical docs (`AGENTS.md`, `docs/`, `Tasks.md`) stay in English.
 - Treat every component as a reusable module; design APIs and layouts so they work independently of the surrounding UI.
 - When asked to color layout elements for validation, use bold, high-contrast colors so regions remain unmistakable.
+- Ensure all user-facing strings are i18n-ready and respect the OS locale (e.g., German UI when the system language is German).
 
 ## Tooling
 - Use uv (`uv add`, `uv sync`, `uv run`) or the matching `make run|dev|sync` shortcuts.

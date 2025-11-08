@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
+    QLayout,
+    QLayoutItem,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
+    QComboBox,
     QScrollArea,
+    QSpacerItem,
+    QSizePolicy,
     QSplitter,
     QToolButton,
     QSlider,
@@ -170,9 +177,213 @@ ACTION_ICONS = {
 
 EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (
     ButtonSpec("ExplorerCreateButton", ACTION_ICONS["create"], "Neuen Eintrag anlegen"),
-    ButtonSpec("ExplorerEditButton", ACTION_ICONS["edit"], "Auswahl bearbeiten"),
     ButtonSpec("ExplorerDeleteButton", ACTION_ICONS["delete"], "Auswahl löschen"),
 )
+
+
+@dataclass
+class LayoutItem:
+    title: str
+    subtitle: str
+    layout: str
+    group: str
+    preview: Path | None = None
+    images: dict[int, str] = field(default_factory=dict)
+
+
+LAYOUT_ITEMS: tuple[LayoutItem, ...] = (
+    LayoutItem("Einspaltig", "Vollflächige Anzeige", "1S|100/1R|100", "Standard"),
+    LayoutItem("Zweispaltig", "Balance 60/40", "2S|60:40/1R:100/1R:100", "Standard"),
+    LayoutItem("Dreispaltig", "Seitenleisten links/rechts", "3S|20:60:20/1R:100/1R:100/1R:100", "Standard"),
+    LayoutItem("Moderator Panel", "Breite Bühne mit vier Slots", "2S|75:25/1R|100/4R|25:25:25:25", "Show"),
+    LayoutItem("Fokus 3-1-3", "Zentrale Bühne mit Sidebars", "3S|20:60:20/2R|50:50/1R|100/2R|50:50", "Show"),
+    LayoutItem("Matrix 3-1-3", "Drei Spalten mit 3/1/3 Reihen", "3S|12.5:75:12.5/3R|34:33:33/1R|100/3R|34:33:33", "Show"),
+)
+
+
+@dataclass
+class LayoutCell:
+    x: float
+    y: float
+    width: float
+    height: float
+    area_id: int = 0
+
+
+@dataclass
+class RatioSpec:
+    ratio: float = 0.0
+    area_id: int = 0
+    has_explicit_id: bool = False
+
+
+def _parse_ratios(segment: str) -> list[float]:
+    parts = [part.strip() for part in segment.split(':') if part.strip()]
+    if not parts:
+        return []
+    ratios: list[float] = []
+    wildcard_indices: list[int] = []
+    remaining = 1.0
+    for index, component in enumerate(parts):
+        if component == '*':
+            ratios.append(0.0)
+            wildcard_indices.append(index)
+            continue
+        try:
+            value = float(component)
+        except ValueError:
+            return []
+        value /= 100.0
+        ratios.append(value)
+        remaining -= value
+    if remaining < 0:
+        remaining = 0.0
+    if wildcard_indices:
+        per = remaining / len(wildcard_indices) if wildcard_indices else 0.0
+        for idx in wildcard_indices:
+            ratios[idx] = per
+    total = sum(ratios)
+    if total <= 0:
+        return []
+    ratios = [value / total for value in ratios]
+    return ratios
+
+
+def _parse_ratio_specs(segment: str) -> list[RatioSpec]:
+    parts = [part.strip() for part in segment.split(':') if part.strip()]
+    if not parts:
+        return []
+    specs: list[RatioSpec] = []
+    wildcard_indices: list[int] = []
+    remaining = 1.0
+    for index, component in enumerate(parts):
+        spec = RatioSpec()
+        if '#' in component:
+            before, _, after = component.partition('#')
+            after = after.strip()
+            try:
+                spec.area_id = int(after)
+            except ValueError:
+                return []
+            spec.has_explicit_id = True
+            component = before.strip()
+        if component == '*':
+            if spec.has_explicit_id:
+                return []
+            specs.append(spec)
+            wildcard_indices.append(index)
+            continue
+        try:
+            value = float(component)
+        except ValueError:
+            return []
+        spec.ratio = value / 100.0
+        remaining -= spec.ratio
+        specs.append(spec)
+    if remaining < 0:
+        remaining = 0.0
+    if wildcard_indices:
+        per = remaining / len(wildcard_indices) if wildcard_indices else 0.0
+        for idx in wildcard_indices:
+            specs[idx].ratio = per
+    total = sum(spec.ratio for spec in specs)
+    if total <= 0:
+        return []
+    for spec in specs:
+        spec.ratio /= total
+    return specs
+
+
+def parse_layout_description(layout_description: str) -> list[LayoutCell]:
+    layout_description = layout_description.strip()
+    if not layout_description:
+        return [LayoutCell(0.0, 0.0, 1.0, 1.0, 1)]
+
+    segments = [segment.strip() for segment in layout_description.split('/') if segment.strip()]
+    if not segments:
+        return []
+
+    header_parts = [part.strip() for part in segments[0].split('|')]
+    if len(header_parts) < 2:
+        return []
+
+    columns_token = header_parts[0]
+    if not columns_token.endswith('S'):
+        return []
+    try:
+        column_count = int(columns_token[:-1])
+    except ValueError:
+        return []
+    if column_count <= 0:
+        return []
+
+    column_ratios = _parse_ratios(header_parts[1])
+    if len(column_ratios) != column_count:
+        return []
+
+    columns: list[dict[str, list]] = [
+        {"ratios": [], "specs": []} for _ in range(column_count)
+    ]
+
+    column_index = 0
+    for segment in segments[1:]:
+        if column_index >= column_count:
+            break
+        parts = [part.strip() for part in segment.split('|')]
+        if len(parts) == 2:
+            rows_token, ratios_token = parts
+        else:
+            sep_index = segment.find(':')
+            if sep_index <= 0:
+                return []
+            rows_token = segment[:sep_index].strip()
+            ratios_token = segment[sep_index + 1 :].strip()
+        if not rows_token.endswith('R'):
+            return []
+        try:
+            row_count = int(rows_token[:-1])
+        except ValueError:
+            return []
+        if row_count <= 0:
+            return []
+        row_specs = _parse_ratio_specs(ratios_token)
+        if len(row_specs) != row_count:
+            return []
+        columns[column_index]["ratios"] = [spec.ratio for spec in row_specs]
+        columns[column_index]["specs"] = row_specs
+        column_index += 1
+
+    cells: list[LayoutCell] = []
+    x = 0.0
+    for col in range(column_count):
+        column_width = column_ratios[col]
+        if column_width <= 0:
+            continue
+        row_ratios: list[float] = columns[col]["ratios"] or [1.0]
+        row_specs: list[RatioSpec] = columns[col]["specs"] or [RatioSpec(ratio=ratio) for ratio in row_ratios]
+        y = 0.0
+        for row, ratio in enumerate(row_ratios):
+            if ratio <= 0:
+                continue
+            area_id = row_specs[row].area_id if row < len(row_specs) and row_specs[row].has_explicit_id else 0
+            cells.append(LayoutCell(x, y, column_width, ratio, area_id))
+            y += ratio
+        x += column_width
+
+    if not cells:
+        return [LayoutCell(0.0, 0.0, 1.0, 1.0, 1)]
+
+    used_ids = {cell.area_id for cell in cells if cell.area_id > 0}
+    auto_indices = [index for index, cell in enumerate(cells) if cell.area_id <= 0]
+    auto_indices.sort(key=lambda idx: cells[idx].width * cells[idx].height, reverse=True)
+    candidate = 1
+    for idx in auto_indices:
+        while candidate in used_ids:
+            candidate += 1
+        cells[idx].area_id = candidate
+        used_ids.add(candidate)
+        candidate += 1
+    return cells
 
 
 @dataclass
@@ -207,6 +418,248 @@ class IconToolButton(QToolButton):
         super().leaveEvent(event)
 
 
+class FlowLayout(QLayout):
+    def __init__(self, parent: QWidget | None = None, margin: int = 0, spacing: int = -1) -> None:
+        super().__init__(parent)
+        self.item_list: list[QLayoutItem] = []
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing if spacing >= 0 else 8)
+
+    def addItem(self, item) -> None:  # type: ignore[override]
+        self.item_list.append(item)
+
+    def addStretch(self, stretch: int = 0) -> None:
+        spacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.addItem(spacer)
+
+    def count(self) -> int:  # type: ignore[override]
+        return len(self.item_list)
+
+    def itemAt(self, index: int):  # type: ignore[override]
+        if 0 <= index < len(self.item_list):
+            return self.item_list[index]
+        return None
+
+    def takeAt(self, index: int):  # type: ignore[override]
+        if 0 <= index < len(self.item_list):
+            return self.item_list.pop(index)
+        return None
+
+    def expandingDirections(self):  # type: ignore[override]
+        return Qt.Orientations(Qt.Orientation(0))
+
+    def hasHeightForWidth(self) -> bool:  # type: ignore[override]
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # type: ignore[override]
+        return self._do_layout(QRectF(0, 0, width, 0), True)
+
+    def setGeometry(self, rect) -> None:  # type: ignore[override]
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self) -> QSize:  # type: ignore[override]
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # type: ignore[override]
+        size = QSize()
+        for item in self.item_list:
+            size = size.expandedTo(item.minimumSize())
+        left, top, right, bottom = self.getContentsMargins()
+        size += QSize(left + right, top + bottom)
+        return size
+
+    def _do_layout(self, rect, test_only: bool) -> int:
+        spacing = self.spacing()
+        left, top, right, bottom = self.getContentsMargins()
+        effective_rect = QRectF(rect.x() + left, rect.y() + top, rect.width() - left - right, rect.height() - top - bottom)
+        x = effective_rect.x()
+        y = effective_rect.y()
+        line_height = 0
+
+        for item in self.item_list:
+            widget = item.widget()
+            next_x = x + item.sizeHint().width() + spacing
+            if next_x - spacing > effective_rect.right() and line_height > 0:
+                x = effective_rect.x()
+                y = y + line_height + spacing
+                next_x = x + item.sizeHint().width() + spacing
+                line_height = 0
+
+            if not test_only:
+                item.setGeometry(QRect(int(x), int(y), item.sizeHint().width(), item.sizeHint().height()))
+
+            x = next_x
+            line_height = max(line_height, item.sizeHint().height())
+
+        return int(y + line_height - rect.y() + bottom)
+
+
+class LayoutPreviewCanvas(QWidget):
+    areaDropped = Signal(int, str)
+
+    def __init__(self, layout_description: str, parent: QWidget | None = None, *, accepts_drop: bool = False) -> None:
+        super().__init__(parent)
+        self._layout_description = layout_description
+        self._cells = parse_layout_description(layout_description)
+        self._selected = False
+        self._area_images: dict[int, QPixmap] = {}
+        self.setAcceptDrops(accepts_drop)
+
+    def set_selected(self, selected: bool) -> None:
+        if self._selected != selected:
+            self._selected = selected
+            self.update()
+
+    def set_layout_description(self, layout_description: str) -> None:
+        layout_description = layout_description or "1S|100/1R|100"
+        if layout_description != self._layout_description:
+            self._layout_description = layout_description
+            self._cells = parse_layout_description(layout_description)
+            self.update()
+
+    def set_area_images(self, images: dict[int, str] | None) -> None:
+        new_map: dict[int, QPixmap] = {}
+        if images:
+            for area_id, path in images.items():
+                pix = QPixmap(path)
+                if not pix.isNull():
+                    new_map[area_id] = pix
+        self._area_images = new_map
+        self.update()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(self.rect(), Qt.transparent)
+        base_color = QColor("#4c8bf5" if self._selected else "#8ab4f8")
+        border_color = QColor("#b3c8ff" if self._selected else "#d0dcff")
+        padding = 4
+        available_width = max(self.width() - padding * 2, 1)
+        available_height = max(self.height() - padding * 2, 1)
+        for cell in self._cells:
+            x = padding + cell.x * available_width
+            y = padding + cell.y * available_height
+            w = cell.width * available_width
+            h = cell.height * available_height
+            rect = QRectF(x, y, w, h)
+            painter.fillRect(rect, base_color)
+            if pix := self._area_images.get(cell.area_id):
+                scaled = pix.scaled(int(w), int(h), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                target_x = rect.x() + (rect.width() - scaled.width()) / 2
+                target_y = rect.y() + (rect.height() - scaled.height()) / 2
+                painter.drawPixmap(target_x, target_y, scaled)
+            painter.setPen(border_color)
+            painter.drawRoundedRect(rect, 3, 3)
+        painter.end()
+
+    def dragEnterEvent(self, event) -> None:  # type: ignore[override]
+        if not self.acceptDrops():
+            event.ignore()
+            return
+        if event.mimeData().hasUrls() or event.mimeData().hasImage() or event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:  # type: ignore[override]
+        if self.acceptDrops():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:  # type: ignore[override]
+        if not self.acceptDrops():
+            event.ignore()
+            return
+        pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        area_id = self._area_at_position(pos)
+        if area_id <= 0:
+            event.ignore()
+            return
+        source = ""
+        mime = event.mimeData()
+        if mime.hasUrls():
+            url = mime.urls()[0]
+            source = url.toLocalFile() or url.toString()
+        elif mime.hasImage():
+            image = QPixmap.fromImage(mime.imageData())
+            temp_path = str(PROJECT_ROOT / "temp_drop_image.png")
+            image.save(temp_path)
+            source = temp_path
+        elif mime.hasText():
+            source = mime.text().strip()
+        if not source:
+            event.ignore()
+            return
+        self.areaDropped.emit(area_id, source)
+        event.acceptProposedAction()
+
+    def _area_at_position(self, pos) -> int:
+        padding = 4
+        available_width = max(self.width() - padding * 2, 1)
+        available_height = max(self.height() - padding * 2, 1)
+        for cell in self._cells:
+            rect = QRectF(
+                padding + cell.x * available_width,
+                padding + cell.y * available_height,
+                cell.width * available_width,
+                cell.height * available_height,
+            )
+            if rect.contains(pos):
+                return cell.area_id or 0
+        return 0
+
+
+class LayoutPreviewCard(QFrame):
+    clicked = Signal(LayoutItem)
+
+    def __init__(self, layout_item: LayoutItem, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._layout_item = layout_item
+        self._selected = False
+        self.setObjectName(f"layoutCard_{layout_item.title.replace(' ', '_')}")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(160, 140)
+
+        frame_layout = QVBoxLayout(self)
+        frame_layout.setContentsMargins(8, 8, 8, 8)
+        frame_layout.setSpacing(6)
+
+        self._canvas = LayoutPreviewCanvas(layout_item.layout, self)
+        self._canvas.setFixedSize(140, 90)
+        frame_layout.addWidget(self._canvas, alignment=Qt.AlignmentFlag.AlignHCenter)
+
+        title_label = QLabel(layout_item.title, self)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 12px; color: #dbe3ff;")
+        frame_layout.addWidget(title_label)
+
+        self._update_styles()
+
+    @property
+    def layout_id(self) -> str:
+        return self._layout_item.layout
+
+    def setSelected(self, selected: bool) -> None:
+        if self._selected != selected:
+            self._selected = selected
+            self._canvas.set_selected(selected)
+            self._update_styles()
+
+    def _update_styles(self) -> None:
+        bg = "#2f3645" if self._selected else "#24262b"
+        border = "#4c8bf5" if self._selected else "#3a3d42"
+        self.setStyleSheet(
+            f"QFrame#{self.objectName()} {{ background-color: {bg}; border: 1px solid {border}; border-radius: 10px; }}"
+        )
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._layout_item)
+        super().mousePressEvent(event)
+
+
 class MasterWindow(QMainWindow):
     """Top-level control surface for SlideQuest."""
 
@@ -229,10 +682,19 @@ class MasterWindow(QMainWindow):
         self._search_input: QLineEdit | None = None
         self._filter_button: QToolButton | None = None
         self._crud_buttons: list[QToolButton] = []
+        self._crud_button_map: dict[str, QToolButton] = {}
         self._volume_slider: QSlider | None = None
         self._volume_button_map: dict[str, QToolButton] = {}
         self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
+        self._layout_list: QListWidget | None = None
+        self._detail_title_input: QLineEdit | None = None
+        self._detail_subtitle_input: QLineEdit | None = None
+        self._detail_group_combo: QComboBox | None = None
+        self._detail_preview_canvas: LayoutPreviewCanvas | None = None
+        self._related_layout_layout: QHBoxLayout | None = None
+        self._related_layout_cards: list[LayoutPreviewCard] = []
+        self._current_layout_id: str = ""
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
         self._container_color = QColor("#222222")
@@ -289,7 +751,7 @@ class MasterWindow(QMainWindow):
         explorer_container = QWidget(splitter)
         explorer_container.setObjectName("explorerView")
         self._explorer_container = explorer_container
-        explorer_container.setMinimumWidth(250)
+        explorer_container.setMinimumWidth(282)
         explorer_layout = QVBoxLayout(explorer_container)
         explorer_layout.setContentsMargins(0, 0, 0, 0)
         explorer_layout.setSpacing(0)
@@ -305,6 +767,7 @@ class MasterWindow(QMainWindow):
         search_input = QLineEdit(explorer_header)
         search_input.setObjectName("ExplorerSearchInput")
         search_input.setPlaceholderText("Suche …")
+        search_input.setToolTip("ExplorerSearchInput")
         search_input.setFixedHeight(SYMBOL_BUTTON_SIZE)
         search_action = search_input.addAction(
             QIcon(str(ACTION_ICONS["search"])),
@@ -333,12 +796,26 @@ class MasterWindow(QMainWindow):
         explorer_main_scroll = QScrollArea(explorer_container)
         explorer_main_scroll.setObjectName("explorerMainScroll")
         explorer_main_scroll.setWidgetResizable(True)
+        explorer_main_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         explorer_main_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        explorer_main_scroll.setStyleSheet("QScrollBar { width: 0px; }")
         explorer_main_scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         explorer_main = QWidget()
         explorer_main.setObjectName("explorerMainView")
+        explorer_main_layout = QVBoxLayout(explorer_main)
+        explorer_main_layout.setContentsMargins(4, 4, 4, 4)
+        explorer_main_layout.setSpacing(4)
+        self._layout_list = QListWidget(explorer_main)
+        self._layout_list.setObjectName("layoutList")
+        self._layout_list.setSpacing(6)
+        self._layout_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
+        explorer_main_layout.addWidget(self._layout_list)
         explorer_main_scroll.setWidget(explorer_main)
+        self._populate_layout_list()
+        self._layout_list.currentItemChanged.connect(
+            lambda current, _prev: self._on_layout_selected(current)
+        )
 
         explorer_layout.addWidget(explorer_header)
         explorer_layout.addWidget(explorer_main_scroll, 1)
@@ -347,7 +824,7 @@ class MasterWindow(QMainWindow):
         explorer_footer_layout.setContentsMargins(8, 4, 8, 4)
         explorer_footer_layout.setSpacing(8)
         explorer_footer_layout.addStretch(1)
-        self._build_buttons(
+        self._crud_button_map = self._build_buttons(
             explorer_footer,
             explorer_footer_layout,
             EXPLORER_CRUD_SPECS,
@@ -358,7 +835,7 @@ class MasterWindow(QMainWindow):
         detail_container = QWidget(splitter)
         detail_container.setObjectName("detailView")
         self._detail_container = detail_container
-        detail_container.setMinimumWidth(250)
+        detail_container.setMinimumWidth(282)
         detail_layout = QVBoxLayout(detail_container)
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(0)
@@ -367,19 +844,97 @@ class MasterWindow(QMainWindow):
         detail_header.setObjectName("detailHeaderView")
         detail_header.setFixedHeight(DETAIL_HEADER_HEIGHT)
         self._header_views.append(detail_header)
+        detail_header_layout = QHBoxLayout(detail_header)
+        detail_header_layout.setContentsMargins(12, 6, 12, 6)
+        detail_header_layout.setSpacing(8)
+
+        self._detail_title_input = QLineEdit("Titel", detail_header)
+        self._detail_title_input.setPlaceholderText("Titel")
+        self._detail_title_input.setFixedHeight(SYMBOL_BUTTON_SIZE)
+        self._detail_title_input.setObjectName("DetailTitleInput")
+        self._detail_title_input.setToolTip("DetailTitleInput")
+        self._detail_subtitle_input = QLineEdit("Untertitel", detail_header)
+        self._detail_subtitle_input.setPlaceholderText("Untertitel")
+        self._detail_subtitle_input.setFixedHeight(SYMBOL_BUTTON_SIZE)
+        self._detail_subtitle_input.setObjectName("DetailSubtitleInput")
+        self._detail_subtitle_input.setToolTip("DetailSubtitleInput")
+        self._detail_group_combo = QComboBox(detail_header)
+        self._detail_group_combo.setEditable(True)
+        self._detail_group_combo.setFixedHeight(SYMBOL_BUTTON_SIZE)
+        self._detail_group_combo.setObjectName("DetailGroupCombo")
+        self._detail_group_combo.setToolTip("DetailGroupCombo")
+        for item in sorted({layout.group for layout in LAYOUT_ITEMS}):
+            self._detail_group_combo.addItem(item)
+
+        detail_header_layout.addWidget(self._detail_title_input, 1)
+        detail_header_layout.addWidget(self._detail_subtitle_input, 1)
+        detail_header_layout.addWidget(self._detail_group_combo, 1)
+
+        if self._detail_title_input:
+            self._detail_title_input.textChanged.connect(lambda _text: self._save_detail_changes())
+        if self._detail_subtitle_input:
+            self._detail_subtitle_input.textChanged.connect(lambda _text: self._save_detail_changes())
+        if self._detail_group_combo:
+            self._detail_group_combo.editTextChanged.connect(lambda _text: self._save_detail_changes())
 
         detail_footer = QFrame(detail_container)
         detail_footer.setObjectName("detailFooterView")
-        detail_footer.setFixedHeight(DETAIL_FOOTER_HEIGHT)
+        detail_footer.setMinimumHeight(220)
+        detail_footer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        detail_footer.setVisible(True)
 
         detail_main_scroll = QScrollArea(detail_container)
         detail_main_scroll.setObjectName("detailMainScroll")
         detail_main_scroll.setWidgetResizable(True)
+        detail_main_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         detail_main_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        detail_main_scroll.setStyleSheet("QScrollBar { width: 0px; }")
         detail_main_scroll.setFrameShape(QFrame.Shape.NoFrame)
 
         detail_main = QWidget()
         detail_main.setObjectName("detailMainView")
+        detail_main_layout = QVBoxLayout(detail_main)
+        detail_main_layout.setContentsMargins(12, 12, 12, 12)
+        detail_main_layout.setSpacing(12)
+
+        initial_layout = LAYOUT_ITEMS[0].layout if LAYOUT_ITEMS else "1S|100/1R|100"
+        self._current_layout_id = initial_layout
+        self._detail_preview_canvas = LayoutPreviewCanvas(initial_layout, detail_main, accepts_drop=True)
+        self._detail_preview_canvas.setObjectName("detailPreview")
+        self._detail_preview_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._detail_preview_canvas.areaDropped.connect(self._handle_preview_drop)
+        detail_main_layout.addWidget(self._detail_preview_canvas, 1)
+        if self._layout_list and self._layout_list.currentItem():
+            current_layout_item = self._layout_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            if current_layout_item:
+                self._set_current_layout(current_layout_item.layout, current_layout_item.images)
+
+        detail_footer_layout = QVBoxLayout(detail_footer)
+        detail_footer_layout.setContentsMargins(12, 8, 12, 12)
+        detail_footer_layout.setSpacing(8)
+        footer_label = QLabel("Layout Auswahl", detail_footer)
+        footer_label.setStyleSheet("font-weight: 600; font-size: 14px; color: #dbe3ff;")
+        detail_footer_layout.addWidget(footer_label)
+
+        related_scroll = QScrollArea(detail_footer)
+        related_scroll.setObjectName("relatedLayoutsScroll")
+        related_scroll.setWidgetResizable(True)
+        related_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        related_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        related_scroll.setStyleSheet("QScrollBar:horizontal { height: 0px; }")
+        related_scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        related_items_container = QWidget()
+        related_items_container.setObjectName("relatedLayouts")
+        horizontal_layout = QHBoxLayout(related_items_container)
+        horizontal_layout.setContentsMargins(0, 0, 0, 0)
+        horizontal_layout.setSpacing(8)
+        related_scroll.setWidget(related_items_container)
+        detail_footer_layout.addWidget(related_scroll)
+
+        self._related_layout_layout = horizontal_layout
+        self._populate_related_layouts()
+
         detail_main_scroll.setWidget(detail_main)
 
         detail_layout.addWidget(detail_header)
@@ -390,7 +945,7 @@ class MasterWindow(QMainWindow):
         splitter.addWidget(detail_container)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 4)
-        splitter.setSizes([128, max(self.width() - 128, 300)])
+        splitter.setSizes([160, max(self.width() - 160, 300)])
 
         viewport_layout.addWidget(symbol_view)
         viewport_layout.addWidget(splitter, 1)
@@ -505,11 +1060,11 @@ class MasterWindow(QMainWindow):
             self._tint_surface(self._status_bar, surface_color)
         if self._symbol_view is not None:
             self._tint_surface(self._symbol_view, surface_color)
+        explorer_color = window_color.darker(120 if is_dark else 110)
+        detail_color = window_color.darker(115 if is_dark else 108)
         if self._explorer_container is not None:
-            explorer_color = window_color.darker(120 if is_dark else 110)
             self._tint_surface(self._explorer_container, explorer_color)
         if self._detail_container is not None:
-            detail_color = window_color.darker(115 if is_dark else 108)
             self._tint_surface(self._detail_container, detail_color)
 
         icon_base = palette.color(
@@ -529,6 +1084,7 @@ class MasterWindow(QMainWindow):
             border_color = border_color.darker(120)
         self._style_view_borders(border_color)
         self._style_explorer_controls(border_color)
+        self._style_detail_inputs(border_color)
         self._update_icon_colors()
 
     @staticmethod
@@ -597,6 +1153,24 @@ class MasterWindow(QMainWindow):
         for btn in self._crud_buttons:
             btn.setStyleSheet(button_style)
 
+    def _style_detail_inputs(self, border_color: QColor) -> None:
+        css_color = border_color.name(QColor.HexArgb)
+        lineedit_style = (
+            f"QLineEdit {{ background: transparent; border: 1px solid {css_color};"
+            "border-radius: 8px; padding: 0 10px; color: palette(text); }}"
+        )
+        combo_style = (
+            f"QComboBox {{ background: transparent; border: 1px solid {css_color};"
+            "border-radius: 8px; padding: 0 10px; color: palette(text); }}"
+            "QComboBox QAbstractItemView { background-color: palette(base); }"
+        )
+        if self._detail_title_input:
+            self._detail_title_input.setStyleSheet(lineedit_style)
+        if self._detail_subtitle_input:
+            self._detail_subtitle_input.setStyleSheet(lineedit_style)
+        if self._detail_group_combo:
+            self._detail_group_combo.setStyleSheet(combo_style)
+
     def _update_icon_colors(self) -> None:
         for binding in self._icon_bindings:
             path = (
@@ -648,6 +1222,208 @@ class MasterWindow(QMainWindow):
             vol_down.clicked.connect(lambda: adjust(-5))
         if vol_up := buttons.get("StatusVolumeUpButton"):
             vol_up.clicked.connect(lambda: adjust(5))
+
+    def _populate_related_layouts(self) -> None:
+        layout = self._related_layout_layout
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._related_layout_cards.clear()
+        for layout_item in LAYOUT_ITEMS:
+            card = LayoutPreviewCard(layout_item)
+            card.clicked.connect(self._on_related_layout_clicked)
+            layout.addWidget(card)
+            self._related_layout_cards.append(card)
+        layout.addStretch(1)
+        self._update_related_layout_selection()
+
+    def _on_related_layout_clicked(self, layout_item: LayoutItem) -> None:
+        if not self._layout_list:
+            return
+        for row in range(self._layout_list.count()):
+            list_item = self._layout_list.item(row)
+            item_data = list_item.data(Qt.ItemDataRole.UserRole)
+            if item_data and item_data.layout == layout_item.layout:
+                self._layout_list.setCurrentRow(row)
+                return
+        self._set_current_layout(layout_item.layout, layout_item.images)
+
+    def _update_related_layout_selection(self) -> None:
+        if not self._related_layout_cards:
+            return
+        for card in self._related_layout_cards:
+            card.setSelected(self._current_layout_id == card.layout_id)
+
+    def _handle_preview_drop(self, area_id: int, source: str) -> None:
+        if not self._layout_list or area_id <= 0:
+            return
+        item = self._layout_list.currentItem()
+        if item is None:
+            return
+        layout_item = item.data(Qt.ItemDataRole.UserRole)
+        if layout_item is None:
+            return
+        source = source.strip()
+        if not source:
+            return
+        layout_item.images[area_id] = source
+        item.setData(Qt.ItemDataRole.UserRole, layout_item)
+        self._set_current_layout(layout_item.layout, layout_item.images)
+
+    def _save_detail_changes(self) -> None:
+        if not self._layout_list:
+            return
+        item = self._layout_list.currentItem()
+        if item is None:
+            return
+        existing = item.data(Qt.ItemDataRole.UserRole)
+        if existing is None:
+            return
+        title = self._detail_title_input.text().strip() if self._detail_title_input else existing.title
+        subtitle = (
+            self._detail_subtitle_input.text().strip()
+            if self._detail_subtitle_input
+            else existing.subtitle
+        )
+        group = (
+            self._detail_group_combo.currentText().strip()
+            if self._detail_group_combo
+            else existing.group
+        )
+        title = title or existing.title
+        subtitle = subtitle or existing.subtitle
+        group = group or existing.group
+        updated = LayoutItem(
+            title,
+            subtitle,
+            existing.layout,
+            group,
+            existing.preview,
+            existing.images.copy(),
+        )
+        item.setData(Qt.ItemDataRole.UserRole, updated)
+        widget = self._layout_list.itemWidget(item)
+        if widget is not None:
+            self._update_layout_item_widget(widget, updated)
+        self._set_current_layout(updated.layout, updated.images)
+
+    def _update_layout_item_widget(self, widget: QWidget, layout_item: LayoutItem) -> None:
+        if title := widget.findChild(QLabel, "layoutItemTitle"):
+            title.setText(layout_item.title)
+        if subtitle := widget.findChild(QLabel, "layoutItemSubtitle"):
+            subtitle.setText(layout_item.subtitle)
+        if group := widget.findChild(QLabel, "layoutItemGroup"):
+            group.setText(layout_item.group)
+
+    def _set_current_layout(self, layout_id: str, images: dict[int, str] | None = None) -> None:
+        layout_id = layout_id or "1S|100/1R|100"
+        self._current_layout_id = layout_id
+        image_map = images or {}
+        if self._detail_preview_canvas:
+            self._detail_preview_canvas.set_layout_description(layout_id)
+            self._detail_preview_canvas.set_area_images(image_map)
+        if self._presentation_window:
+            self._presentation_window.set_layout_description(layout_id)
+            self._presentation_window.set_area_images(image_map)
+        self._update_related_layout_selection()
+
+    def _populate_layout_list(self) -> None:
+        if self._layout_list is None:
+            return
+        self._layout_list.clear()
+        for layout_item in LAYOUT_ITEMS:
+            item_copy = LayoutItem(
+                layout_item.title,
+                layout_item.subtitle,
+                layout_item.layout,
+                layout_item.group,
+                layout_item.preview,
+                layout_item.images.copy(),
+            )
+            widget = self._create_layout_list_widget(item_copy)
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(widget.sizeHint())
+            list_item.setData(Qt.ItemDataRole.UserRole, item_copy)
+            self._layout_list.addItem(list_item)
+            self._layout_list.setItemWidget(list_item, widget)
+        if self._layout_list.count():
+            self._layout_list.setCurrentRow(0)
+
+    def _create_layout_list_widget(self, item: LayoutItem) -> QWidget:
+        container = QFrame()
+        container.setObjectName("layoutListItem")
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(8, 8, 8, 8)
+        container_layout.setSpacing(12)
+
+        preview_label = QLabel(container)
+        preview_label.setFixedSize(96, 72)
+        preview_label.setPixmap(self._build_preview_pixmap(item))
+        preview_label.setScaledContents(True)
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
+        title = QLabel(item.title, container)
+        title.setObjectName("layoutItemTitle")
+        title.setStyleSheet("font-weight: 600; font-size: 16px;")
+        subtitle = QLabel(item.subtitle, container)
+        subtitle.setObjectName("layoutItemSubtitle")
+        subtitle.setStyleSheet("color: palette(mid);")
+        group = QLabel(item.group, container)
+        group.setObjectName("layoutItemGroup")
+        group.setStyleSheet("font-size: 12px; color: palette(dark);")
+        text_layout.addWidget(title)
+        text_layout.addWidget(subtitle)
+        text_layout.addWidget(group)
+
+        container_layout.addWidget(preview_label)
+        container_layout.addLayout(text_layout, 1)
+        return container
+
+    def _build_preview_pixmap(self, item: LayoutItem) -> QPixmap:
+        if item.preview and item.preview.exists():
+            pix = QPixmap(str(item.preview)).scaled(
+                96, 72, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+            return pix
+        pix = QPixmap(96, 72)
+        base = QColor(60, 60, 60)
+        pix.fill(base)
+        painter = QPainter(pix)
+        painter.setPen(QColor(120, 120, 120))
+        painter.drawRect(1, 1, 94, 70)
+        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "Preview")
+        painter.end()
+        return pix
+
+    def _on_layout_selected(self, item: QListWidgetItem | None) -> None:
+        layout_item = item.data(Qt.ItemDataRole.UserRole) if item else None
+        self._update_detail_header(layout_item)
+        layout_id = layout_item.layout if layout_item else ""
+        images = layout_item.images if layout_item else {}
+        self._set_current_layout(layout_id, images)
+
+    def _update_detail_header(self, layout_item: LayoutItem | None) -> None:
+        title = layout_item.title if layout_item else "Titel"
+        subtitle = layout_item.subtitle if layout_item else "Untertitel"
+        group = layout_item.group if layout_item else "Gruppe"
+        if self._detail_title_input:
+            self._detail_title_input.setText(title)
+        if self._detail_subtitle_input:
+            self._detail_subtitle_input.setText(subtitle)
+        if self._detail_group_combo and group:
+            index = self._detail_group_combo.findText(group)
+            if index < 0:
+                self._detail_group_combo.addItem(group)
+                index = self._detail_group_combo.findText(group)
+            self._detail_group_combo.setCurrentIndex(index)
+        if layout_item is None and self._detail_group_combo:
+            self._detail_group_combo.setEditText(group)
 
     @staticmethod
     def _tinted_icon(path: Path, color: QColor, size: QSize) -> QIcon:
@@ -755,10 +1531,18 @@ class PresentationWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("SlideQuest – Presentation")
         self.setMinimumSize(1280, 720)
-        self._setup_placeholder()
+        self._canvas = LayoutPreviewCanvas("1S|100/1R|100", self)
+        container = QWidget(self)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.addWidget(self._canvas, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.setCentralWidget(container)
 
-    def _setup_placeholder(self) -> None:
-        self.setCentralWidget(QWidget(self))
+    def set_layout_description(self, layout_description: str) -> None:
+        self._canvas.set_layout_description(layout_description or "1S|100/1R|100")
+
+    def set_area_images(self, images: dict[int, str] | None) -> None:
+        self._canvas.set_area_images(images)
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         super().closeEvent(event)
@@ -776,6 +1560,7 @@ def main() -> None:
     presentation.hide()
     master._presentation_window = presentation
     presentation.closed.connect(master._on_presentation_closed)
+    master._set_current_layout(master._current_layout_id)
     master.show()
     if owns_event_loop:
         assert app is not None
