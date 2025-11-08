@@ -56,6 +56,7 @@ Die Abbildung zeigt die aktuelle Zwei-\*Drei-Teilung des MasterWindow (StatusBar
 ![MasterWindow Steuerzentrale](assets/MasterWindow_ZentraleSteuerelemente.png)
 
 Die zweite Grafik zoomt auf die Statusbar und die SymbolView: Sie zeigt Navigations-Buttons (Layout, Audio, Note, File) und die Audio-Steuerung (Seekbar, Transport, Volume) als verbindliche Referenz für Beschriftungen und Interaktion.
+Im ExplorerHeaderView sitzen nun Suchfeld und Filter-Button (Bootstrap-Icons `search`/`filter`), während der ExplorerFooterView CRUD-Aktionen (Create/Edit/Delete) über die Schaltflächen `ExplorerCreateButton`, `ExplorerEditButton` und `ExplorerDeleteButton` bereitstellt.
 Zusätzliche Symbolleisten-Icons (Audio, Dateien, Fenster, Layouts) liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/` bereit. Die SymbolView fungiert als Navigation: Jeder Button öffnet eine Sub-Anwendung im Explorer- und Detailbereich. Der `FileExplorerLauncher` lädt die programmeigene Asset-Library für Bilder, Videos, Audios und Markdown-Dateien; `NoteExplorerLauncher`, `AudioExplorerLauncher` und `LayoutExplorerLauncher` folgen demselben Muster für weitere Spezialbereiche.
 
 ### Nächste Schritte

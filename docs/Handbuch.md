@@ -43,6 +43,11 @@ Die SymbolView ist eine vertikale Navigationsleiste. Jeder Button öffnet eine e
 
 > Abbildung: Zusammenspiel aus SymbolView (links) und Statusbar (zentral/rechts) inklusive Seekbar, Transport-Buttons und Lautstärke.
 
+## Explorer Controls
+
+- `ExplorerSearchInput` + `ExplorerFilterButton` leben im ExplorerHeaderView und nutzen die Bootstrap-Icons `search`/`filter` (siehe `assets/icons/bootstrap/actions/`).
+- Der ExplorerFooterView stellt CRUD bereit: `ExplorerCreateButton`, `ExplorerEditButton`, `ExplorerDeleteButton`.
+
 ## Verzeichnisleitfaden
 
 - `src/slidequest/app.py` – Einstiegspunkt, Fensteraufbau, SymbolView-Logik.

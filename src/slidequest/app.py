@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPalette, QPainter
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QScrollArea,
     QSplitter,
@@ -149,6 +150,14 @@ STATUS_BUTTONS: tuple[
     ),
 )
 
+ACTION_ICONS = {
+    "search": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "search.svg",
+    "filter": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "filter.svg",
+    "create": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "plus-square.svg",
+    "edit": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "pencil-square.svg",
+    "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
+}
+
 
 @dataclass
 class IconBinding:
@@ -172,6 +181,10 @@ class MasterWindow(QMainWindow):
         self._status_buttons: list[QToolButton] = []
         self._header_views: list[QFrame] = []
         self._detail_container: QWidget | None = None
+        self._line_edit_actions: list[tuple[QAction, Path]] = []
+        self._search_input: QLineEdit | None = None
+        self._filter_button: QToolButton | None = None
+        self._crud_buttons: list[QToolButton] = []
         self._icon_bindings: list[IconBinding] = []
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
@@ -234,6 +247,33 @@ class MasterWindow(QMainWindow):
         explorer_header.setObjectName("explorerHeaderView")
         explorer_header.setFixedHeight(EXPLORER_HEADER_HEIGHT)
         self._header_views.append(explorer_header)
+        explorer_header_layout = QHBoxLayout(explorer_header)
+        explorer_header_layout.setContentsMargins(8, 4, 8, 4)
+        explorer_header_layout.setSpacing(8)
+
+        search_input = QLineEdit(explorer_header)
+        search_input.setObjectName("ExplorerSearchInput")
+        search_input.setPlaceholderText("Suche …")
+        search_input.setFixedHeight(SYMBOL_BUTTON_SIZE)
+        search_action = search_input.addAction(
+            QIcon(str(ACTION_ICONS["search"])),
+            QLineEdit.ActionPosition.LeadingPosition,
+        )
+        self._line_edit_actions.append((search_action, ACTION_ICONS["search"]))
+        self._search_input = search_input
+
+        filter_button = self._create_icon_button(
+            explorer_header,
+            "ExplorerFilterButton",
+            ACTION_ICONS["filter"],
+            "Filter öffnen",
+            checkable=True,
+        )
+        filter_button.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+        self._filter_button = filter_button
+
+        explorer_header_layout.addWidget(search_input, 1)
+        explorer_header_layout.addWidget(filter_button)
 
         explorer_footer = QFrame(explorer_container)
         explorer_footer.setObjectName("explorerFooterView")
@@ -252,6 +292,24 @@ class MasterWindow(QMainWindow):
         explorer_layout.addWidget(explorer_header)
         explorer_layout.addWidget(explorer_main_scroll, 1)
         explorer_layout.addWidget(explorer_footer)
+        explorer_footer_layout = QHBoxLayout(explorer_footer)
+        explorer_footer_layout.setContentsMargins(8, 4, 8, 4)
+        explorer_footer_layout.setSpacing(8)
+        explorer_footer_layout.addStretch(1)
+        for name, key, tooltip in (
+            ("ExplorerCreateButton", "create", "Neuen Eintrag anlegen"),
+            ("ExplorerEditButton", "edit", "Auswahl bearbeiten"),
+            ("ExplorerDeleteButton", "delete", "Auswahl löschen"),
+        ):
+            btn = self._create_icon_button(
+                explorer_footer,
+                name,
+                ACTION_ICONS[key],
+                tooltip,
+            )
+            btn.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+            self._crud_buttons.append(btn)
+            explorer_footer_layout.addWidget(btn)
 
         detail_container = QWidget(splitter)
         detail_container.setObjectName("detailView")
@@ -285,8 +343,9 @@ class MasterWindow(QMainWindow):
 
         splitter.addWidget(explorer_container)
         splitter.addWidget(detail_container)
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 4)
+        splitter.setSizes([256, max(self.width() - 256, 300)])
 
         viewport_layout.addWidget(symbol_view)
         viewport_layout.addWidget(splitter, 1)
@@ -433,6 +492,7 @@ class MasterWindow(QMainWindow):
         else:
             border_color = border_color.darker(120)
         self._style_view_borders(border_color)
+        self._style_explorer_controls(border_color)
         self._update_icon_colors()
 
     @staticmethod
@@ -482,6 +542,25 @@ class MasterWindow(QMainWindow):
         for header in self._header_views:
             header.setStyleSheet(top_border)
 
+    def _style_explorer_controls(self, border_color: QColor) -> None:
+        css_color = border_color.name(QColor.HexArgb)
+        if self._search_input is not None:
+            self._search_input.setStyleSheet(
+                f"QLineEdit {{ background: transparent; border: 1px solid {css_color};"
+                "border-radius: 8px; padding: 0 10px; color: palette(text); }}"
+            )
+        button_style = """
+        QToolButton {
+            background-color: transparent;
+            border: none;
+            padding: 4px;
+        }
+        """
+        if self._filter_button is not None:
+            self._filter_button.setStyleSheet(button_style)
+        for btn in self._crud_buttons:
+            btn.setStyleSheet(button_style)
+
     def _update_icon_colors(self) -> None:
         for binding in self._icon_bindings:
             path = (
@@ -496,6 +575,11 @@ class MasterWindow(QMainWindow):
             )
             tinted = self._tinted_icon(path, color, binding.button.iconSize())
             binding.button.setIcon(tinted)
+        for action, path in self._line_edit_actions:
+            tinted = self._tinted_icon(
+                path, self._icon_base_color, QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE)
+            )
+            action.setIcon(tinted)
 
     @staticmethod
     def _tinted_icon(path: Path, color: QColor, size: QSize) -> QIcon:
