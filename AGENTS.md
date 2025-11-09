@@ -23,7 +23,8 @@ This document is exclusively for automation agents. Keep the human-facing contex
 - CI runs `uv sync --all-groups`, `flake8`, and `pytest` (see `.github/workflows/python.yml`). Ensure those commands succeed locally when relevant.
 
 ## Coding Guidelines
-- Entry point: `src/slidequest/app.py`; keep widgets modular and the two-window architecture intact.
+- Entry point: `src/slidequest/app.py` stays minimal—just bootstrap Master + Presentation windows. Business logic belongs in `src/slidequest/views/master_window.py` (UI composition), `src/slidequest/views/presentation_window.py` (rendering), `src/slidequest/viewmodels/…` (state/persistence), and helpers under `src/slidequest/services/…`, `src/slidequest/utils/…`, `src/slidequest/views/widgets/…`. Preserve this separation whenever you add features.
+- Master/detail widgets should delegate all state mutations to the relevant ViewModel/Service; avoid new persistence or content helpers inside the view classes.
 - Persist slide content in `data/slides.json`. Whenever layouts or dropped media change, rerender the `PresentationWindow` to update `assets/thumbnails/...`.
 - Shared config/notes live in root markdown files; add inline comments only to clarify non-obvious logic.
 - Icons must adapt to light/dark themes (light icons on dark backgrounds, dark icons on light backgrounds).
