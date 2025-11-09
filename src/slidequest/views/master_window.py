@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import PlaylistTrack, SlideData
 from slidequest.services.storage import DATA_DIR, PROJECT_ROOT, THUMBNAIL_DIR, SlideStorage
+from slidequest.services.audio_service import AudioService
 from slidequest.ui.constants import (
     ACTION_ICONS,
     DETAIL_FOOTER_HEIGHT,
@@ -92,6 +93,12 @@ class MasterWindow(QMainWindow):
         self._playlist_button_map: dict[str, QToolButton] = {}
         self._playlist_list: PlaylistListWidget | None = None
         self._playlist_icon_labels: list[tuple[QLabel, Path]] = []
+        self._playlist_play_buttons: dict[int, QToolButton] = {}
+        self._playlist_seek_sliders: dict[int, QSlider] = {}
+        self._playlist_current_labels: dict[int, QLabel] = {}
+        self._playlist_duration_labels: dict[int, QLabel] = {}
+        self._seek_active: dict[int, bool] = {}
+        self._playlist_track_durations: dict[int, int] = {}
         self._header_views: list[QFrame] = []
         self._detail_container: QWidget | None = None
         self._detail_stack: QStackedWidget | None = None
@@ -111,6 +118,7 @@ class MasterWindow(QMainWindow):
         self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
         self._playlist_accent_color = QColor("#5c8dff")
+        self._audio_service = AudioService()
         self._storage = SlideStorage()
         self._viewmodel = MasterViewModel(self._storage)
         self._viewmodel.add_listener(self._on_viewmodel_changed)
@@ -406,6 +414,7 @@ class MasterWindow(QMainWindow):
         self.setCentralWidget(central)
         self._apply_surface_theme()
         self._wire_symbol_launchers()
+        self._wire_audio_service()
 
     def _build_status_bar(self, status_bar: QFrame) -> None:
         layout = QHBoxLayout(status_bar)
@@ -730,6 +739,12 @@ class MasterWindow(QMainWindow):
         else:
             self._set_detail_views_visible(False)
 
+    def _wire_audio_service(self) -> None:
+        service = self._audio_service
+        service.track_state_changed.connect(self._handle_audio_track_state_changed)
+        service.position_changed.connect(self._handle_audio_position_changed)
+        service.duration_changed.connect(self._handle_audio_duration_changed)
+
     def _handle_detail_launcher_toggled(self, mode: str, checked: bool) -> None:
         if checked:
             self._activate_detail_mode(mode)
@@ -855,6 +870,12 @@ class MasterWindow(QMainWindow):
         list_view.blockSignals(True)
         list_view.clear()
         self._playlist_icon_labels = []
+        self._playlist_play_buttons.clear()
+        self._playlist_seek_sliders.clear()
+        self._playlist_current_labels.clear()
+        self._playlist_duration_labels.clear()
+        self._seek_active.clear()
+        self._playlist_track_durations.clear()
         if not tracks:
             if placeholder is not None:
                 placeholder.show()
@@ -876,6 +897,8 @@ class MasterWindow(QMainWindow):
             list_view.setItemWidget(item, widget)
         list_view.blockSignals(False)
         self._refresh_playlist_icon_labels()
+        self._update_icon_colors()
+        self._audio_service.set_tracks(tracks)
 
     def _create_playlist_item_widget(self, track: PlaylistTrack, index: int) -> QWidget:
         container = QFrame()
@@ -927,6 +950,8 @@ class MasterWindow(QMainWindow):
             checked_icon_path=PLAYLIST_ITEM_ICONS["stop"],
         )
         container_layout.addWidget(play_button)
+        play_button.toggled.connect(lambda checked, idx=index: self._handle_playlist_play_toggled(idx, checked))
+        self._playlist_play_buttons[index] = play_button
 
         title_source = Path(track.source).name if track.source else ""
         title_text = track.title.strip() or title_source or "Unbenannter Track"
@@ -942,6 +967,7 @@ class MasterWindow(QMainWindow):
         current_time_label.setFixedWidth(56)
         current_time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         container_layout.addWidget(current_time_label)
+        self._playlist_current_labels[index] = current_time_label
 
         seek_slider = QSlider(Qt.Orientation.Horizontal, container)
         seek_slider.setObjectName(f"PlaylistItemSeekSlider_{index}")
@@ -960,6 +986,9 @@ class MasterWindow(QMainWindow):
         seek_shell = self._wrap_slider(seek_slider, container)
         seek_shell.setObjectName(f"PlaylistItemSeekShell_{index}")
         container_layout.addWidget(seek_shell, 2)
+        seek_slider.sliderPressed.connect(lambda idx=index: self._handle_seek_pressed(idx))
+        seek_slider.sliderReleased.connect(lambda idx=index: self._handle_seek_released(idx))
+        self._playlist_seek_sliders[index] = seek_slider
 
         duration_label = QLabel(self._format_time(duration), container)
         duration_label.setObjectName(f"PlaylistItemDurationLabel_{index}")
@@ -967,6 +996,7 @@ class MasterWindow(QMainWindow):
         duration_label.setFixedWidth(56)
         duration_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         container_layout.addWidget(duration_label)
+        self._playlist_duration_labels[index] = duration_label
 
         fade_in_icon = self._create_icon_label(
             container,
@@ -1054,6 +1084,82 @@ class MasterWindow(QMainWindow):
         self._viewmodel.remove_playlist_track(index)
         self._current_slide = self._viewmodel.current_slide
         self._populate_playlist_tracks()
+
+    def _handle_playlist_play_toggled(self, index: int, checked: bool) -> None:
+        if checked:
+            track = self._get_playlist_track(index)
+            start_pos = int(track.position_seconds * 1000) if track and track.position_seconds > 0 else None
+            self._audio_service.play(index, start_pos)
+        else:
+            self._audio_service.stop(index)
+
+    def _handle_seek_pressed(self, index: int) -> None:
+        self._seek_active[index] = True
+
+    def _handle_seek_released(self, index: int) -> None:
+        slider = self._playlist_seek_sliders.get(index)
+        duration = self._playlist_track_durations.get(index)
+        self._seek_active[index] = False
+        if slider is None or not duration or duration <= 0:
+            return
+        ratio = slider.value() / max(1, slider.maximum())
+        position = int(ratio * duration)
+        self._audio_service.seek(index, position)
+        track = self._get_playlist_track(index)
+        if track is not None:
+            track.position_seconds = position / 1000
+        if (label := self._playlist_current_labels.get(index)) is not None:
+            label.setText(self._format_time(position / 1000))
+
+    def _handle_audio_track_state_changed(self, index: int, playing: bool) -> None:
+        button = self._playlist_play_buttons.get(index)
+        if button is None:
+            return
+        button.blockSignals(True)
+        button.setChecked(playing)
+        button.blockSignals(False)
+        slider = self._playlist_seek_sliders.get(index)
+        if slider is not None:
+            slider.setEnabled(playing or bool(self._playlist_track_durations.get(index)))
+
+    def _handle_audio_position_changed(self, index: int, position: int) -> None:
+        if self._seek_active.get(index):
+            return
+        slider = self._playlist_seek_sliders.get(index)
+        duration = self._playlist_track_durations.get(index)
+        if slider is not None and duration and duration > 0:
+            self._set_slider_value(slider, position, duration)
+        label = self._playlist_current_labels.get(index)
+        if label is not None:
+            label.setText(self._format_time(position / 1000))
+        track = self._get_playlist_track(index)
+        if track is not None:
+            track.position_seconds = position / 1000
+
+    def _handle_audio_duration_changed(self, index: int, duration: int) -> None:
+        self._playlist_track_durations[index] = duration
+        label = self._playlist_duration_labels.get(index)
+        if label is not None:
+            label.setText(self._format_time(duration / 1000))
+        slider = self._playlist_seek_sliders.get(index)
+        if slider is not None:
+            slider.setEnabled(duration > 0)
+        track = self._get_playlist_track(index)
+        if track is not None:
+            track.duration_seconds = duration / 1000
+
+    def _set_slider_value(self, slider: QSlider, position: int, duration: int) -> None:
+        maximum = max(1, slider.maximum())
+        value = int(position / max(1, duration) * maximum)
+        slider.blockSignals(True)
+        slider.setValue(max(0, min(maximum, value)))
+        slider.blockSignals(False)
+
+    def _get_playlist_track(self, index: int) -> PlaylistTrack | None:
+        slide = self._current_slide or self._viewmodel.current_slide
+        if slide and 0 <= index < len(slide.audio.playlist):
+            return slide.audio.playlist[index]
+        return None
 
     def _build_playlist_detail_view(self, parent: QWidget | None = None) -> QWidget:
         view = QWidget(parent)

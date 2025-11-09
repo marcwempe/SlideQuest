@@ -113,7 +113,7 @@ class PlaylistListWidget(QListWidget):
             return
         widget = self.itemWidget(item)
         if widget is not None:
-            self.setItemWidget(item, None)
+            self.removeItemWidget(item)
         take = self.takeItem(self._drag_active_row)
         if target_row > self._drag_active_row:
             target_row -= 1
