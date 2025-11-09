@@ -25,6 +25,7 @@ Weitere Hinweise:
 - `src/slidequest/views/master_window.py` - komplette `MasterWindow`-Logik inkl. Panels.
 - `src/slidequest/views/presentation_window.py` - separates Präsentationsfenster.
 - `src/slidequest/views/widgets/layout_preview.py` - Layout-Canvas + Karten.
+- `src/slidequest/views/widgets/common.py` - gemeinsame UI-Helfer (FlowLayout, Icon-Buttons).
 - `src/slidequest/utils/media.py` - Helfer für Slugs und Medienpfade.
 - `assets/` - Referenzgrafiken und automatisch erzeugte Thumbnails.
 - `docs/assets/LayoutViewScreenshot.png` - aktueller Screenshot für die Doku.
@@ -32,21 +33,30 @@ Weitere Hinweise:
 
 ![Layout-Ansicht](docs/assets/LayoutViewScreenshot.png)
 
+## Architektur
+
+- `slidequest/app.py` startet die QApplication, erzeugt `MasterWindow` + `PresentationWindow` und verknüpft beide.
+- `MasterWindow` (`views/master_window.py`) baut die Oberfläche, lagert aber alle Zustandsänderungen an das `MasterViewModel` aus.
+- `MasterViewModel` (`viewmodels/master.py`) nutzt `SlideStorage` (`services/storage.py`), um `data/slides.json` zu laden/speichern, Layout-Inhalte zu synchronisieren und Änderungen zu signalisieren.
+- `PresentationWindow` zeigt die aktuelle Folie und liefert die Quelle für Thumbnails; es existiert immer genau eine Instanz.
+- Wiederverwendbare Hilfen (z. B. `utils/media.py`, `views/widgets/common.py`) bündeln Slug-/Pfad-Logik sowie FlowLayout/Icon-Buttons.
+
 ## UI-Highlights
 
 - **SymbolView**: Vertikale Navigationsleiste mit Launchern für Layout, Audio, Notes und Files. Aktive Buttons erhalten eine farbige Linksmarkierung.
-- **StatusBar**: Artwork + Titel, Audio-Seekbar (zentriert) und Transport-/Volume-Steuerung auf der rechten Seite. Icons folgen dem Betriebssystem-Thema (hell in Dark Mode, dunkel in Light Mode).
+- **SymbolView-Status**: Aktuell ist nur der Layout-Launcher wirklich angebunden und blendet Explorer/Detail ein bzw. aus; die übrigen Buttons sind Platzhalter für kommende Subapps.
+- **StatusBar**: Artwork + Titel, Audio-Seekbar (zentriert) und Transport-/Volume-Steuerung auf der rechten Seite. Diese Bedienelemente steuern derzeit ausschließlich die UI (es gibt noch keinen Audio-Stack).
 - **Explorer/Detail**: ExplorerHeader mit Suche + Filter, ExplorerFooter mit CRUD. DetailMain zeigt die Layout-Vorschau; DetailFooter enthält die horizontale Layout-Auswahl.
 - **PresentationWindow**: Wird über den unteren SymbolView-Button geöffnet; es darf nur eine Instanz gleichzeitig existieren.
 
 ## Datenmodell
 
-Slides liegen in `data/slides.json`. Jede Folie enthält Titel, Untertitel, Gruppe sowie einen `layout`-Block (`active_layout`, `thumbnail_url`, `content`). `content[i]` adressiert den Bereich `#i+1`. Layoutwechsel löschen keine übrigen Bilder; sie werden automatisch wieder sichtbar, sobald ein Layout genügend Plätze bietet. Jede Änderung an Layout oder Dropped Media löst ein erneutes Thumbnail-Rendering (`assets/thumbnails/<slug>.png`) aus.
+Slides liegen in `data/slides.json`. Jede Folie enthält Titel, Untertitel, Gruppe sowie einen `layout`-Block (`active_layout`, `thumbnail_url`, `content`). `content[i]` adressiert den Bereich `#i+1`. Layout-Beschreibungen können explizite IDs mit `#` enthalten (z. B. `25#1`), womit Slots priorisiert oder dauerhaft benannt werden; diese IDs bestimmen dann die Zuordnung der Inhalte. `MasterViewModel` hält `content` und `images` automatisch konsistent und persistiert über `SlideStorage`. Layoutwechsel löschen keine übrigen Bilder; sie werden automatisch wieder sichtbar, sobald ein Layout genügend Plätze bietet. Jede Änderung an Layout oder Dropped Media löst ein erneutes Thumbnail-Rendering (`assets/thumbnails/<slug>.png`) aus.
 
 ## Lokalisierung & Zugänglichkeit
 
 - Alle Steuerelemente besitzen Tooltips mit ihrer eindeutigen ID.
-- Strings müssen über die vorgesehenen i18n-Helfer laufen (aktuell in `ui/constants.py` vorgesehen).
+- Die Texte sind aktuell hart verdrahtet. Halte sie kurz/sachlich, damit eine spätere Lokalisierung (z. B. automatische deutsche UI bei deutscher OS-Sprache) ohne großen Umbau möglich bleibt.
 - Dark-/Light-Mode wird automatisch erkannt; Icons werden entsprechend neu eingefärbt.
 
 ## Herkunft & Lizenz
