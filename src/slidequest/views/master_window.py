@@ -187,6 +187,7 @@ class MasterWindow(QMainWindow):
         splitter.setObjectName("ContentSplitter")
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(8)
+        splitter.splitterMoved.connect(self._enforce_splitter_ratio)
         self._content_splitter = splitter
 
         explorer_container = QWidget(splitter)
@@ -401,9 +402,9 @@ class MasterWindow(QMainWindow):
 
         splitter.addWidget(explorer_container)
         splitter.addWidget(detail_container)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 4)
-        splitter.setSizes([160, max(self.width() - 160, 300)])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        self._apply_splitter_sizes()
 
         viewport_layout.addWidget(symbol_view)
         viewport_layout.addWidget(splitter, 1)
@@ -435,9 +436,18 @@ class MasterWindow(QMainWindow):
 
         title_container = QWidget(left_container)
         title_container_layout = QVBoxLayout(title_container)
+
+        logo_label = QLabel(left_container)
+        logo_label.setObjectName("StatusLogoLabel")
+        logo_pix = QPixmap(str(PROJECT_ROOT / "assets" / "others" / "SlideQuestLogo_small.png"))
+        logo_label.setPixmap(logo_pix)
+        logo_label.setFixedSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
+        logo_label.setScaledContents(True)
+        left_layout.addWidget(logo_label)
+
         title_container_layout.setContentsMargins(4, 4, 4, 4)
         title_container_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        title = QLabel("Titel-Platzhalter", title_container)
+        title = QLabel("SideQuest", title_container)
         title.setObjectName("StatusTitleLabel")
         title.setStyleSheet("font-weight: 600;")
         title_container_layout.addWidget(title)
@@ -613,13 +623,14 @@ class MasterWindow(QMainWindow):
             header.setStyleSheet(top_border)
         playlist_list = self._playlist_list
         if playlist_list is not None:
+            playlist_list.setSpacing(6)
             playlist_list.setStyleSheet(
                 """
                 QListWidget { background: transparent; border: none; }
                 QListWidget::item:selected {
                     background-color: rgba(255, 255, 255, 0.08);
                     border: 1px dashed rgba(255, 255, 255, 0.25);
-                    border-radius: 10px;
+                    border-radius: 8px;
                     color: inherit;
                 }
                 """
@@ -738,6 +749,7 @@ class MasterWindow(QMainWindow):
             self._activate_detail_mode(active_mode)
         else:
             self._set_detail_views_visible(False)
+        self._apply_splitter_sizes()
 
     def _wire_audio_service(self) -> None:
         service = self._audio_service
@@ -781,14 +793,11 @@ class MasterWindow(QMainWindow):
             return
         if visible:
             detail.show()
-            if splitter and len(self._detail_last_sizes) >= 2:
-                splitter.setSizes(self._detail_last_sizes)
-            elif splitter:
-                sizes = splitter.sizes()
-                total = sum(sizes) if sizes else self.width()
-                explorer = int(total * 0.25)
-                detail_size = max(total - explorer, 0)
-                splitter.setSizes([explorer, detail_size])
+            if splitter:
+                if len(self._detail_last_sizes) >= 2:
+                    splitter.setSizes(self._detail_last_sizes)
+                else:
+                    self._apply_splitter_sizes()
         else:
             if splitter:
                 sizes = splitter.sizes()
@@ -798,6 +807,23 @@ class MasterWindow(QMainWindow):
                         explorer_total = sizes[0] + sizes[1]
                         splitter.setSizes([explorer_total, 0])
             detail.hide()
+
+    def _apply_splitter_sizes(self) -> None:
+        splitter = self._content_splitter
+        explorer = self._explorer_container
+        if splitter is None or explorer is None:
+            return
+        total = splitter.width() or self.width()
+        if total <= 0:
+            return
+        desired = min(max(explorer.sizeHint().width(), explorer.minimumWidth()), int(total * 0.2))
+        detail_width = max(total - desired, int(total * 0.5))
+        splitter.blockSignals(True)
+        splitter.setSizes([desired, detail_width])
+        splitter.blockSignals(False)
+
+    def _enforce_splitter_ratio(self, _pos: int, _index: int) -> None:
+        self._apply_splitter_sizes()
 
     def _wire_volume_buttons(self, buttons: dict[str, QToolButton]) -> None:
         slider = self._volume_slider
@@ -904,14 +930,14 @@ class MasterWindow(QMainWindow):
         container = QFrame()
         container.setObjectName(f"AudioPlaylistListItem_{index}")
         container_layout = QHBoxLayout(container)
-        container_layout.setContentsMargins(8, 8, 8, 8)
-        container_layout.setSpacing(8)
+        container_layout.setContentsMargins(6, 6, 6, 6)
+        container_layout.setSpacing(6)
         container.setStyleSheet(
             """
             QFrame {
                 background-color: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 10px;
+                border-radius: 8px;
             }
             QToolButton, QLabel, QLineEdit {
                 background-color: transparent;
@@ -936,7 +962,7 @@ class MasterWindow(QMainWindow):
             f"PlaylistItemDragHandle_{index}",
         )
         drag_handle.setCursor(Qt.CursorShape.OpenHandCursor)
-        drag_handle.setFixedSize(ICON_PIXMAP_SIZE + 6, ICON_PIXMAP_SIZE + 6)
+        drag_handle.setFixedSize(ICON_PIXMAP_SIZE + 4, ICON_PIXMAP_SIZE + 4)
         drag_handle.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         container_layout.addWidget(drag_handle)
 
@@ -958,7 +984,7 @@ class MasterWindow(QMainWindow):
         title_label = QLabel(title_text, container)
         title_label.setObjectName(f"PlaylistItemTitleLabel_{index}")
         title_label.setToolTip(f"PlaylistItemTitleLabel_{index}")
-        title_label.setMinimumWidth(160)
+        title_label.setMinimumWidth(140)
         container_layout.addWidget(title_label, 1)
 
         current_time_label = QLabel(self._format_time(track.position_seconds), container)
@@ -973,7 +999,7 @@ class MasterWindow(QMainWindow):
         seek_slider.setObjectName(f"PlaylistItemSeekSlider_{index}")
         seek_slider.setToolTip(f"PlaylistItemSeekSlider_{index}")
         seek_slider.setRange(0, 10_000)
-        seek_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
+        seek_slider.setFixedHeight(STATUS_ICON_SIZE - 12)
         duration = max(track.duration_seconds, 0.0)
         position = max(min(track.position_seconds, duration), 0.0)
         if duration > 0:
@@ -1249,7 +1275,7 @@ class MasterWindow(QMainWindow):
 
         playlist_list = PlaylistListWidget(playlist_body)
         playlist_list.setObjectName("AudioPlaylistListView")
-        playlist_list.setMinimumHeight(160)
+        playlist_list.setMinimumHeight(140)
         playlist_body_layout.addWidget(playlist_list, 1)
         playlist_layout.addWidget(playlist_body, 1)
         self._playlist_list = playlist_list
