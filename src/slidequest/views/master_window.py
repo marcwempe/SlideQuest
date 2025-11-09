@@ -1018,6 +1018,9 @@ class MasterWindow(QMainWindow):
         if track.fade_in_seconds > 0:
             fade_in_input.setText(f"{track.fade_in_seconds:.1f}")
         container_layout.addWidget(fade_in_input)
+        fade_in_input.editingFinished.connect(
+            lambda idx=index, field=fade_in_input: self._handle_fade_value_changed(idx, field, "in")
+        )
 
         fade_out_input = QLineEdit(container)
         fade_out_input.setObjectName(f"PlaylistItemFadeOutInput_{index}")
@@ -1031,6 +1034,9 @@ class MasterWindow(QMainWindow):
         if track.fade_out_seconds > 0:
             fade_out_input.setText(f"{track.fade_out_seconds:.1f}")
         container_layout.addWidget(fade_out_input)
+        fade_out_input.editingFinished.connect(
+            lambda idx=index, field=fade_out_input: self._handle_fade_value_changed(idx, field, "out")
+        )
 
         fade_out_icon = self._create_icon_label(
             container,
@@ -1160,6 +1166,32 @@ class MasterWindow(QMainWindow):
         if slide and 0 <= index < len(slide.audio.playlist):
             return slide.audio.playlist[index]
         return None
+
+    def _handle_fade_value_changed(self, index: int, field: QLineEdit, kind: str) -> None:
+        text = field.text().strip().replace(",", ".")
+        try:
+            value = max(0.0, float(text)) if text else 0.0
+        except ValueError:
+            value = 0.0
+        track = self._get_playlist_track(index)
+        if track is None:
+            return
+        if kind == "in":
+            track.fade_in_seconds = value
+        else:
+            track.fade_out_seconds = value
+        if value <= 0:
+            field.blockSignals(True)
+            field.clear()
+            field.blockSignals(False)
+        else:
+            field.blockSignals(True)
+            field.setText(f"{value:.1f}")
+            field.blockSignals(False)
+        slide = self._current_slide
+        if slide is not None:
+            self._audio_service.set_tracks(slide.audio.playlist)
+            self._viewmodel.persist()
 
     def _build_playlist_detail_view(self, parent: QWidget | None = None) -> QWidget:
         view = QWidget(parent)
