@@ -24,6 +24,7 @@ This document is exclusively for automation agents. Keep the human-facing contex
 
 ## Coding Guidelines
 - Entry point: `src/slidequest/app.py` stays minimal -- just bootstrap Master + Presentation windows. Business logic belongs in `src/slidequest/views/master_window.py` (UI composition), `src/slidequest/views/presentation_window.py` (rendering), `src/slidequest/viewmodels/...` (state/persistence), and helpers under `src/slidequest/services/...`, `src/slidequest/utils/...`, `src/slidequest/views/widgets/...`. Preserve this separation whenever you add features.
+- Keep every Python module between **200–800 lines**; when a file grows beyond that window, split it into focused mixins or helpers instead of letting it bloat.
 - Master/detail widgets should delegate all state mutations to the relevant ViewModel/Service; avoid new persistence or content helpers inside the view classes.
 - Persist slide content in `data/slides.json`. Whenever layouts or dropped media change, rerender the `PresentationWindow` to update `assets/thumbnails/...`.
 - Shared config/notes live in root markdown files; add inline comments only to clarify non-obvious logic.
