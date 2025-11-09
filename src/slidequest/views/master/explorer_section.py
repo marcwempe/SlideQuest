@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QListWidget,
     QListWidgetItem,
-    QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -114,7 +109,7 @@ class ExplorerSectionMixin:
             self._viewmodel.select_slide(row)
             slide = self._viewmodel.current_slide
         self._current_slide = slide
-        self._update_detail_header(slide)
+
         if slide:
             layout_id = slide.layout.active_layout
             images = slide.images.copy()
@@ -123,23 +118,7 @@ class ExplorerSectionMixin:
             images = {}
         self._set_current_layout(layout_id, images)
         self._populate_playlist_tracks()
-
-    def _update_detail_header(self, slide: SlideData | None) -> None:
-        title = slide.title if slide else "Titel"
-        subtitle = slide.subtitle if slide else "Untertitel"
-        group = slide.group if slide else "Gruppe"
-        if self._detail_title_input:
-            self._detail_title_input.setText(title)
-        if self._detail_subtitle_input:
-            self._detail_subtitle_input.setText(subtitle)
-        if self._detail_group_combo and group:
-            index = self._detail_group_combo.findText(group)
-            if index < 0:
-                self._detail_group_combo.addItem(group)
-                index = self._detail_group_combo.findText(group)
-            self._detail_group_combo.setCurrentIndex(index)
-        if slide is None and self._detail_group_combo:
-            self._detail_group_combo.setEditText(group)
+        self._update_slide_item_states()
 
     def _refresh_slide_widget(self, slide: SlideData) -> None:
         if not self._slide_list:
@@ -249,6 +228,8 @@ class ExplorerSectionMixin:
             self._slide_list.setItemWidget(list_item, widget)
         if self._slide_list.count():
             self._slide_list.setCurrentRow(0)
+        self._refresh_slide_item_styles()
+        self._update_slide_item_states()
 
     def _create_slide_list_widget(self, slide: SlideData) -> QWidget:
         container = QFrame()
@@ -256,6 +237,8 @@ class ExplorerSectionMixin:
         container_layout = QHBoxLayout(container)
         container_layout.setContentsMargins(8, 8, 8, 8)
         container_layout.setSpacing(12)
+        container.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        container.setProperty("active", False)
 
         preview_label = QLabel(container)
         preview_label.setObjectName("SlideItemPreview")
@@ -285,6 +268,7 @@ class ExplorerSectionMixin:
 
         container_layout.addWidget(preview_label)
         container_layout.addLayout(text_layout, 1)
+        container.setStyleSheet(self._build_slide_item_stylesheet())
         return container
 
     def _build_preview_pixmap(self, slide: SlideData) -> QPixmap:
@@ -306,3 +290,61 @@ class ExplorerSectionMixin:
         painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "Preview")
         painter.end()
         return pix
+
+    def _refresh_slide_item_styles(self) -> None:
+        if not self._slide_list:
+            return
+        stylesheet = self._build_slide_item_stylesheet()
+        for row in range(self._slide_list.count()):
+            item = self._slide_list.item(row)
+            widget = self._slide_list.itemWidget(item)
+            if widget is None:
+                continue
+            widget.setStyleSheet(stylesheet)
+        self._update_slide_item_states()
+
+    def _build_slide_item_stylesheet(self) -> str:
+        palette = self.palette()
+        base_border = self._color_with_alpha(palette.color(QPalette.ColorRole.Mid), 90)
+        hover_border = self._color_with_alpha(self._icon_accent_color, 210)
+        hover_bg = self._color_with_alpha(palette.color(QPalette.ColorRole.AlternateBase), 70)
+        active_bg = self._color_with_alpha(self._icon_accent_color, 80)
+        active_border = self._icon_accent_color.name()
+        return f"""
+        QFrame#SlideListViewItem {{
+            border: 1px solid {base_border};
+            border-radius: 10px;
+            background-color: transparent;
+        }}
+        QFrame#SlideListViewItem:hover {{
+            border-color: {hover_border};
+            background-color: {hover_bg};
+        }}
+        QFrame#SlideListViewItem[active="true"] {{
+            border-color: {active_border};
+            background-color: {active_bg};
+        }}
+        """
+
+    def _update_slide_item_states(self) -> None:
+        if not self._slide_list:
+            return
+        active_row = self._slide_list.currentRow()
+        for row in range(self._slide_list.count()):
+            item = self._slide_list.item(row)
+            widget = self._slide_list.itemWidget(item)
+            if widget is None:
+                continue
+            is_active = row == active_row and active_row >= 0
+            if widget.property("active") == is_active:
+                continue
+            widget.setProperty("active", is_active)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()
+
+    @staticmethod
+    def _color_with_alpha(color: QColor, alpha: int) -> str:
+        clone = QColor(color)
+        clone.setAlpha(max(0, min(255, alpha)))
+        return clone.name(QColor.HexArgb)

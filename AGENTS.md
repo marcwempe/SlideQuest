@@ -30,6 +30,7 @@ This document is exclusively for automation agents. Keep the human-facing contex
 - Shared config/notes live in root markdown files; add inline comments only to clarify non-obvious logic.
 - Icons must adapt to light/dark themes (light icons on dark backgrounds, dark icons on light backgrounds).
 - Tooltips must expose unique IDs for every control to aid documentation.
+- Der Layout-Detail-Header bleibt frei von Formularfeldern; Explorer-Slide-Items müssen beim Hover/bei Aktivierung optisch reagieren (Akzent-Border + Hover-Hintergrund).
 
 ## Communication
 - Summaries lead with the "why," then the "what," followed by TODOs/follow-ups.

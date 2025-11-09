@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
-    QComboBox,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -106,9 +105,6 @@ class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionM
         self._slides: list[SlideData] = self._viewmodel.slides
         self._slide_list: QListWidget | None = None
         self._current_slide: SlideData | None = None
-        self._detail_title_input: QLineEdit | None = None
-        self._detail_subtitle_input: QLineEdit | None = None
-        self._detail_group_combo: QComboBox | None = None
         self._detail_preview_canvas: LayoutPreviewCanvas | None = None
         self._related_layout_layout: QHBoxLayout | None = None
         self._related_layout_cards: list[LayoutPreviewCard] = []
@@ -119,6 +115,10 @@ class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionM
         self._content_splitter: QSplitter | None = None
         self._detail_last_sizes: list[int] = []
         self._setup_placeholder()
+
+    def _apply_surface_theme(self) -> None:  # type: ignore[override]
+        super()._apply_surface_theme()
+        self._refresh_slide_item_styles()
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if obj is self._content_splitter and event.type() in {QEvent.Type.Resize, QEvent.Type.Show}:
@@ -302,34 +302,7 @@ class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionM
         detail_header_layout.setContentsMargins(12, 6, 12, 6)
         detail_header_layout.setSpacing(8)
 
-        self._detail_title_input = QLineEdit("Titel", detail_header)
-        self._detail_title_input.setPlaceholderText("Titel")
-        self._detail_title_input.setFixedHeight(SYMBOL_BUTTON_SIZE)
-        self._detail_title_input.setObjectName("DetailTitleField")
-        self._detail_title_input.setToolTip("DetailTitleField")
-        self._detail_subtitle_input = QLineEdit("Untertitel", detail_header)
-        self._detail_subtitle_input.setPlaceholderText("Untertitel")
-        self._detail_subtitle_input.setFixedHeight(SYMBOL_BUTTON_SIZE)
-        self._detail_subtitle_input.setObjectName("DetailSubtitleField")
-        self._detail_subtitle_input.setToolTip("DetailSubtitleField")
-        self._detail_group_combo = QComboBox(detail_header)
-        self._detail_group_combo.setEditable(True)
-        self._detail_group_combo.setFixedHeight(SYMBOL_BUTTON_SIZE)
-        self._detail_group_combo.setObjectName("DetailGroupComboBox")
-        self._detail_group_combo.setToolTip("DetailGroupComboBox")
-        for item in sorted({layout.group for layout in LAYOUT_ITEMS}):
-            self._detail_group_combo.addItem(item)
-
-        detail_header_layout.addWidget(self._detail_title_input, 1)
-        detail_header_layout.addWidget(self._detail_subtitle_input, 1)
-        detail_header_layout.addWidget(self._detail_group_combo, 1)
-
-        if self._detail_title_input:
-            self._detail_title_input.textChanged.connect(lambda _text: self._save_detail_changes())
-        if self._detail_subtitle_input:
-            self._detail_subtitle_input.textChanged.connect(lambda _text: self._save_detail_changes())
-        if self._detail_group_combo:
-            self._detail_group_combo.editTextChanged.connect(lambda _text: self._save_detail_changes())
+        detail_header_layout.addStretch(1)
 
         detail_footer = QFrame(layout_detail)
         detail_footer.setObjectName("DetailFooter")
