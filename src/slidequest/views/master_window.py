@@ -5,6 +5,7 @@ from typing import Callable, Iterable
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter, QPixmap, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QFrame,
     QHBoxLayout,

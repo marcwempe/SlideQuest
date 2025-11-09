@@ -1,6 +1,6 @@
 # SlideQuest
 
-PySide6 prototype for building and presenting mixed-media slides. SlideQuest ships two coordinated windows—`MasterWindow` for control and `PresentationWindow` for projection—and keeps every UI string i18n-ready so the runtime language follows the OS locale. The entire codebase is produced by OpenAI Codex sessions and is licensed under the GNU GPL v3.
+PySide6 prototype for building and presenting mixed-media slides. SlideQuest ships two coordinated windows -- `MasterWindow` for control and `PresentationWindow` for projection -- and keeps every UI string i18n-ready so the runtime language follows the OS locale. The entire codebase is produced by OpenAI Codex sessions and is licensed under the GNU GPL v3.
 
 ## Tooling & Commands
 
@@ -14,17 +14,17 @@ PySide6 prototype for building and presenting mixed-media slides. SlideQuest shi
 
 ## Workspace Layout
 
-- `src/slidequest/app.py` – thin entry point that wires Master/Presentation windows.
-- `src/slidequest/models/…` – dataclasses for layouts and slides.
-- `src/slidequest/viewmodels/…` – viewmodels (e.g., `MasterViewModel`) that mediate persistence and UI.
-- `src/slidequest/services/storage.py` – JSON persistence helpers.
-- `src/slidequest/views/master_window.py` – full `MasterWindow` implementation and supporting widgets.
-- `src/slidequest/views/presentation_window.py` – secondary window that mirrors the active layout.
-- `src/slidequest/views/widgets/layout_preview.py` – reusable layout canvas + cards.
-- `src/slidequest/utils/media.py` – helpers for slug/asset path handling.
-- `assets/` – design references + generated thumbnails (`assets/thumbnails/*.png`).
-- `docs/assets/LayoutViewScreenshot.png` – latest UI snapshot used in documentation.
-- `AGENTS.md` – operational rules for automation agents.
+- `src/slidequest/app.py` - thin entry point that wires Master/Presentation windows.
+- `src/slidequest/models/...` - dataclasses for layouts and slides.
+- `src/slidequest/viewmodels/...` - viewmodels (e.g., `MasterViewModel`) that mediate persistence and UI.
+- `src/slidequest/services/storage.py` - JSON persistence helpers.
+- `src/slidequest/views/master_window.py` - full `MasterWindow` implementation and supporting widgets.
+- `src/slidequest/views/presentation_window.py` - secondary window that mirrors the active layout.
+- `src/slidequest/views/widgets/layout_preview.py` - reusable layout canvas + cards.
+- `src/slidequest/utils/media.py` - helpers for slug/asset path handling.
+- `assets/` - design references + generated thumbnails (`assets/thumbnails/*.png`).
+- `docs/assets/LayoutViewScreenshot.png` - latest UI snapshot used in documentation.
+- `AGENTS.md` - operational rules for automation agents.
 
 ![Layout overview](docs/assets/LayoutViewScreenshot.png)
 
@@ -76,7 +76,7 @@ Slides live in `data/slides.json` and follow this structure:
 
 - Every button, slider, or input has a tooltip exposing its unique ID to simplify references in documentation or automation.
 - UI strings must be routed through the localization utilities established in `ui/constants.py` (planned), defaulting to the OS language.
-- Icons from Bootstrap SVG packs (`assets/icons/bootstrap/<domain>/…`) must adapt to light/dark palettes: near-white in dark mode, near-black in light mode.
+- Icons from Bootstrap SVG packs (`assets/icons/bootstrap/<domain>/...`) must adapt to light/dark palettes: near-white in dark mode, near-black in light mode.
 
 ## Provenance & License
 
@@ -86,10 +86,10 @@ Slides live in `data/slides.json` and follow this structure:
 
 ## Git Workflow
 
-1. **Sync & Branch** – Update `main` (`git pull origin main`) and start a feature branch (`git checkout -b feature/<topic>`). Avoid committing directly to `main`.
-2. **Focused Work** – Keep change sets small, update documentation/localization alongside code, and surface large scopes before implementation.
-3. **Test Locally** – Run `uv run slidequest` or `make dev`; add targeted checks for regressions when possible.
-4. **Curate Staging** – Use `git status` plus `git add -p` to stage only intentional edits; generated assets (e.g., thumbnails) should be confirmed before inclusion.
-5. **Commit Message** – Present-tense summary with context (“Add horizontal layout selector”). Reference related tasks if applicable.
-6. **Push & Review** – `git push -u origin feature/<topic>` and open a PR against `main`, noting i18n/doc updates.
-7. **Merge & Clean** – After review, merge (squash or fast-forward), delete the feature branch locally/remotely, and resync your workspace.
+1. **Sync & Branch** - Update `main` (`git pull origin main`) and start a feature branch (`git checkout -b feature/<topic>`). Avoid committing directly to `main`.
+2. **Focused Work** - Keep change sets small, update documentation/localization alongside code, and surface large scopes before implementation.
+3. **Test Locally** - Run `uv run slidequest` or `make dev`; add targeted checks for regressions when possible.
+4. **Curate Staging** - Use `git status` plus `git add -p` to stage only intentional edits; generated assets (e.g., thumbnails) should be confirmed before inclusion.
+5. **Commit Message** - Present-tense summary with context ("Add horizontal layout selector"). Reference related tasks if applicable.
+6. **Push & Review** - `git push -u origin feature/<topic>` and open a PR against `main`, noting i18n/doc updates.
+7. **Merge & Clean** - After review, merge (squash or fast-forward), delete the feature branch locally/remotely, and resync your workspace.
