@@ -67,7 +67,6 @@ class SlideStorage:
                         source=source,
                         title=entry.get("title") or "",
                         duration_seconds=float(entry.get("duration_seconds") or 0.0),
-                        position_seconds=float(entry.get("position_seconds") or 0.0),
                         fade_in_seconds=float(entry.get("fade_in_seconds") or 0.0),
                         fade_out_seconds=float(entry.get("fade_out_seconds") or 0.0),
                     )
@@ -104,7 +103,6 @@ class SlideStorage:
                         "source": track.source,
                         "title": track.title,
                         "duration_seconds": track.duration_seconds,
-                        "position_seconds": track.position_seconds,
                         "fade_in_seconds": track.fade_in_seconds,
                         "fade_out_seconds": track.fade_out_seconds,
                     }

@@ -545,17 +545,25 @@ class MasterWindow(QMainWindow):
         highlight = palette.color(QPalette.ColorRole.Highlight)
 
         icon_base_role = QPalette.ColorRole.BrightText if is_dark else QPalette.ColorRole.Text
-        self._icon_base_color = palette.color(icon_base_role)
-        self._icon_accent_color = highlight
+        icon_base = palette.color(icon_base_role)
+        if is_dark:
+            icon_base = self._boost_color_value(icon_base, 45)
+        self._icon_base_color = icon_base
+        accent_color = highlight
+        if is_dark:
+            accent_color = self._boost_color_value(accent_color, 30)
+        self._icon_accent_color = accent_color
 
         playlist_accent = palette.color(QPalette.ColorRole.Link)
         if not playlist_accent.isValid() or playlist_accent == highlight:
             playlist_accent = palette.color(QPalette.ColorRole.AlternateBase)
         if not playlist_accent.isValid():
             playlist_accent = highlight
+        if is_dark:
+            playlist_accent = self._boost_color_value(playlist_accent, 30)
         self._playlist_accent_color = playlist_accent
 
-        self._style_symbol_buttons(highlight)
+        self._style_symbol_buttons()
         self._style_status_buttons()
         self._style_playlist_buttons()
         border_color = palette.color(QPalette.ColorRole.Mid)
@@ -565,23 +573,34 @@ class MasterWindow(QMainWindow):
         self._update_icon_colors()
 
     @staticmethod
+    def _boost_color_value(color: QColor, boost: int) -> QColor:
+        hue, saturation, value, alpha = color.getHsv()
+        if hue == -1:
+            hue = 0
+        value = max(0, min(255, value + boost))
+        boosted = QColor()
+        boosted.setHsv(hue, saturation, value, alpha)
+        return boosted
+
+    @staticmethod
     def _apply_surface_tint(widget: QWidget, color: QColor) -> None:
         palette = widget.palette()
         palette.setColor(QPalette.ColorRole.Window, color)
         widget.setAutoFillBackground(True)
         widget.setPalette(palette)
 
-    def _style_symbol_buttons(self, accent_color: QColor) -> None:
+    def _style_symbol_buttons(self) -> None:
         style = f"""
         QToolButton {{
             background-color: transparent;
             border: none;
-            border-left: 3px solid transparent;
             padding: 0;
         }}
+        QToolButton:hover,
+        QToolButton:pressed,
         QToolButton:checked {{
-            border-left: 3px solid {accent_color.name()};
             background-color: transparent;
+            border: none;
         }}
         """
         for button in self._symbol_buttons:
@@ -592,8 +611,13 @@ class MasterWindow(QMainWindow):
         QToolButton {
             background-color: transparent;
             border: none;
-            border-radius: 6px;
             padding: 4px;
+        }
+        QToolButton:hover,
+        QToolButton:pressed,
+        QToolButton:checked {
+            background-color: transparent;
+            border: none;
         }
         """
         for button in self._status_buttons:
@@ -606,8 +630,13 @@ class MasterWindow(QMainWindow):
         QToolButton {
             background-color: transparent;
             border: none;
-            border-radius: 6px;
             padding: 4px;
+        }
+        QToolButton:hover,
+        QToolButton:pressed,
+        QToolButton:checked {
+            background-color: transparent;
+            border: none;
         }
         """
         for button in self._playlist_buttons:
@@ -634,15 +663,13 @@ class MasterWindow(QMainWindow):
                 if binding.checked_icon_path and button.isChecked()
                 else binding.icon_path
             )
-            if binding.accent_on_checked and button.isChecked():
-                if button.objectName().startswith("Playlist") and self._playlist_accent_color is not None:
-                    color = self._playlist_accent_color
-                else:
-                    color = self._icon_accent_color
-            else:
-                color = self._icon_base_color
+            color = self._icon_base_color
+            if button.isCheckable() and button.isChecked():
+                color = self._resolve_button_accent(button)
+            elif binding.accent_on_checked and button.isChecked():
+                color = self._resolve_button_accent(button)
             if isinstance(button, IconToolButton) and button.is_hovered:
-                color = color.lighter(150)
+                color = self._boost_color_value(color, 30)
             tinted = self._tinted_icon(path, color, button.iconSize())
             button.setIcon(tinted)
         self._icon_bindings = alive_bindings
@@ -662,6 +689,11 @@ class MasterWindow(QMainWindow):
                 path, self._icon_base_color, QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE)
             )
             action.setIcon(tinted)
+    
+    def _resolve_button_accent(self, button: QToolButton) -> QColor:
+        if button.objectName().startswith("Playlist") and self._playlist_accent_color is not None:
+            return self._playlist_accent_color
+        return self._icon_accent_color
 
     def _on_viewmodel_changed(self) -> None:
         self._slides = self._viewmodel.slides
@@ -1614,6 +1646,20 @@ class MasterWindow(QMainWindow):
         button.setToolTip(tooltip)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setAutoRaise(True)
+        button.setStyleSheet(
+            """
+            QToolButton {
+                background-color: transparent;
+                border: none;
+            }
+            QToolButton:hover,
+            QToolButton:pressed,
+            QToolButton:checked {
+                background-color: transparent;
+                border: none;
+            }
+            """
+        )
         binding = IconBinding(
             button=button,
             icon_path=icon_path,
