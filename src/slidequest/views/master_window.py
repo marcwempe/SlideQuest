@@ -1097,7 +1097,7 @@ class MasterWindow(QMainWindow):
             start_pos = int(track.position_seconds * 1000) if track and track.position_seconds > 0 else None
             self._audio_service.play(index, start_pos)
         else:
-            self._audio_service.stop(index)
+            self._audio_service.stop_with_fade(index)
 
     def _handle_seek_pressed(self, index: int) -> None:
         self._seek_active[index] = True
@@ -1118,6 +1118,13 @@ class MasterWindow(QMainWindow):
             label.setText(self._format_time(position / 1000))
 
     def _handle_audio_track_state_changed(self, index: int, playing: bool) -> None:
+        if playing:
+            for idx, other in self._playlist_play_buttons.items():
+                if idx == index:
+                    continue
+                other.blockSignals(True)
+                other.setChecked(False)
+                other.blockSignals(False)
         button = self._playlist_play_buttons.get(index)
         if button is None:
             return
