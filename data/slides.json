@@ -5,7 +5,7 @@
       "subtitle": "Was zuletzt geschah",
       "group": "17B",
       "layout": {
-        "active_layout": "1S|100/1R|100",
+        "active_layout": "2S|60:40/1R:100/1R:100",
         "thumbnail_url": "assets/thumbnails/intro-1.png",
         "content": [
           "assets/others/SlideQuestLogo.png",
@@ -18,18 +18,18 @@
       "audio": {
         "playlist": [
           {
-            "source": "/Users/marcwempe/Library/Mobile Documents/com~apple~CloudDocs/Downloads/天より堕ちた魂-(the-soul-fallen-from-the-sky).mp3",
-            "title": "天より堕ちた魂-(the-soul-fallen-from-the-sky).mp3",
-            "duration_seconds": 101.232,
-            "fade_in_seconds": 5.0,
-            "fade_out_seconds": 5.0
-          },
-          {
             "source": "/Users/marcwempe/Downloads/Song4.mp3",
             "title": "Song4.mp3",
             "duration_seconds": 149.88,
             "fade_in_seconds": 3.0,
             "fade_out_seconds": 8.0
+          },
+          {
+            "source": "/Users/marcwempe/Library/Mobile Documents/com~apple~CloudDocs/Downloads/天より堕ちた魂-(the-soul-fallen-from-the-sky).mp3",
+            "title": "天より堕ちた魂-(the-soul-fallen-from-the-sky).mp3",
+            "duration_seconds": 101.232,
+            "fade_in_seconds": 5.0,
+            "fade_out_seconds": 5.0
           },
           {
             "source": "/Users/marcwempe/Downloads/Song3.mp3",
