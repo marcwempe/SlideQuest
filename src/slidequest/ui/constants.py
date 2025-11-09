@@ -156,3 +156,81 @@ EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (
     ButtonSpec("ExplorerCreateButton", ACTION_ICONS["create"], "Neuen Eintrag anlegen"),
     ButtonSpec("ExplorerDeleteButton", ACTION_ICONS["delete"], "Auswahl löschen"),
 )
+
+PLAYLIST_ITEM_ICONS = {
+    "drag": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "grip-vertical.svg",
+    "play": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
+    "stop": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "stop-fill.svg",
+    "fade_in": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "sort-up.svg",
+    "fade_out": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "sort-down.svg",
+    "delete": ACTION_ICONS["delete"],
+}
+
+PLAYLIST_CONTROL_SPECS: tuple[ButtonSpec, ...] = (
+    ButtonSpec(
+        "PlaylistShuffleButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "shuffle.svg",
+        "Playlist zufällig abspielen",
+        checkable=True,
+        accent_on_checked=True,
+    ),
+    ButtonSpec(
+        "PlaylistPreviousTrackButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "skip-backward-fill.svg",
+        "Vorheriger Playlist-Track",
+    ),
+    ButtonSpec(
+        "PlaylistPlayPauseButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
+        "Playlist Play/Pause",
+        checkable=True,
+        accent_on_checked=True,
+        checked_icon=PROJECT_ROOT
+        / "assets"
+        / "icons"
+        / "bootstrap"
+        / "audio"
+        / "pause-fill.svg",
+    ),
+    ButtonSpec(
+        "PlaylistStopButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "stop-fill.svg",
+        "Playlist stoppen",
+    ),
+    ButtonSpec(
+        "PlaylistNextTrackButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "skip-forward-fill.svg",
+        "Nächster Playlist-Track",
+    ),
+    ButtonSpec(
+        "PlaylistLoopButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "repeat.svg",
+        "Playlist-Loop aktivieren",
+        checkable=True,
+        accent_on_checked=True,
+        checked_by_default=True,
+    ),
+    ButtonSpec(
+        "PlaylistMuteButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-mute.svg",
+        "Playlist stummschalten",
+        checkable=True,
+        accent_on_checked=True,
+    ),
+    ButtonSpec(
+        "PlaylistVolumeDownButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-down.svg",
+        "Playlist leiser",
+    ),
+    ButtonSpec(
+        "PlaylistVolumeUpButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
+        "Playlist lauter",
+    ),
+)
+
+PLAYLIST_VOLUME_BUTTONS = {
+    "PlaylistMuteButton",
+    "PlaylistVolumeDownButton",
+    "PlaylistVolumeUpButton",
+}

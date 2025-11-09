@@ -3,7 +3,17 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QIcon, QPalette, QPainter, QPixmap, QPen
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDoubleValidator,
+    QIcon,
+    QMouseEvent,
+    QPalette,
+    QPainter,
+    QPixmap,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -17,6 +27,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QToolButton,
     QSlider,
     QVBoxLayout,
@@ -24,7 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
-from slidequest.models.slide import SlideData
+from slidequest.models.slide import PlaylistTrack, SlideData
 from slidequest.services.storage import DATA_DIR, PROJECT_ROOT, THUMBNAIL_DIR, SlideStorage
 from slidequest.ui.constants import (
     ACTION_ICONS,
@@ -34,6 +45,9 @@ from slidequest.ui.constants import (
     EXPLORER_FOOTER_HEIGHT,
     EXPLORER_HEADER_HEIGHT,
     ICON_PIXMAP_SIZE,
+    PLAYLIST_ITEM_ICONS,
+    PLAYLIST_CONTROL_SPECS,
+    PLAYLIST_VOLUME_BUTTONS,
     PRESENTATION_BUTTON_SPEC,
     STATUS_BAR_SIZE,
     STATUS_BUTTON_SPECS,
@@ -47,6 +61,8 @@ from slidequest.viewmodels.master import MasterViewModel
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import FlowLayout, IconBinding, IconToolButton
 from slidequest.views.widgets.layout_preview import LayoutPreviewCanvas, LayoutPreviewCard
+from slidequest.views.widgets.playlist_list import PlaylistListWidget
+from shiboken6 import Shiboken
 
 
 STATUS_VOLUME_BUTTONS = {
@@ -72,17 +88,29 @@ class MasterWindow(QMainWindow):
         self._symbol_button_map: dict[str, QToolButton] = {}
         self._status_buttons: list[QToolButton] = []
         self._status_button_map: dict[str, QToolButton] = {}
+        self._playlist_buttons: list[QToolButton] = []
+        self._playlist_button_map: dict[str, QToolButton] = {}
+        self._playlist_list: PlaylistListWidget | None = None
+        self._playlist_icon_labels: list[tuple[QLabel, Path]] = []
         self._header_views: list[QFrame] = []
         self._detail_container: QWidget | None = None
+        self._detail_stack: QStackedWidget | None = None
+        self._detail_view_widgets: dict[str, QWidget] = {}
+        self._detail_mode_buttons: dict[str, QToolButton | None] = {}
+        self._detail_active_mode: str | None = None
         self._line_edit_actions: list[tuple[QAction, Path]] = []
         self._search_input: QLineEdit | None = None
         self._filter_button: QToolButton | None = None
         self._crud_buttons: list[QToolButton] = []
         self._crud_button_map: dict[str, QToolButton] = {}
         self._volume_slider: QSlider | None = None
+        self._playlist_footer: QFrame | None = None
+        self._playlist_volume_slider: QSlider | None = None
+        self._playlist_last_volume_value = 75
         self._volume_button_map: dict[str, QToolButton] = {}
         self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
+        self._playlist_accent_color = QColor("#5c8dff")
         self._storage = SlideStorage()
         self._viewmodel = MasterViewModel(self._storage)
         self._viewmodel.add_listener(self._on_viewmodel_changed)
@@ -95,6 +123,7 @@ class MasterWindow(QMainWindow):
         self._detail_preview_canvas: LayoutPreviewCanvas | None = None
         self._related_layout_layout: QHBoxLayout | None = None
         self._related_layout_cards: list[LayoutPreviewCard] = []
+        self._playlist_empty_label: QLabel | None = None
         self._current_layout_id: str = ""
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
@@ -248,7 +277,18 @@ class MasterWindow(QMainWindow):
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(0)
 
-        detail_header = QFrame(detail_container)
+        detail_stack = QStackedWidget(detail_container)
+        detail_stack.setObjectName("DetailStack")
+        detail_layout.addWidget(detail_stack, 1)
+        self._detail_stack = detail_stack
+
+        layout_detail = QWidget(detail_stack)
+        layout_detail.setObjectName("LayoutDetailView")
+        layout_detail_layout = QVBoxLayout(layout_detail)
+        layout_detail_layout.setContentsMargins(0, 0, 0, 0)
+        layout_detail_layout.setSpacing(0)
+
+        detail_header = QFrame(layout_detail)
         detail_header.setObjectName("DetailHeader")
         detail_header.setFixedHeight(DETAIL_HEADER_HEIGHT)
         self._header_views.append(detail_header)
@@ -285,13 +325,13 @@ class MasterWindow(QMainWindow):
         if self._detail_group_combo:
             self._detail_group_combo.editTextChanged.connect(lambda _text: self._save_detail_changes())
 
-        detail_footer = QFrame(detail_container)
+        detail_footer = QFrame(layout_detail)
         detail_footer.setObjectName("DetailFooter")
         detail_footer.setMinimumHeight(220)
         detail_footer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         detail_footer.setVisible(True)
 
-        detail_main_scroll = QScrollArea(detail_container)
+        detail_main_scroll = QScrollArea(layout_detail)
         detail_main_scroll.setObjectName("DetailMainScroll")
         detail_main_scroll.setWidgetResizable(True)
         detail_main_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -341,9 +381,15 @@ class MasterWindow(QMainWindow):
 
         detail_main_scroll.setWidget(detail_main)
 
-        detail_layout.addWidget(detail_header)
-        detail_layout.addWidget(detail_main_scroll, 1)
-        detail_layout.addWidget(detail_footer)
+        layout_detail_layout.addWidget(detail_header)
+        layout_detail_layout.addWidget(detail_main_scroll, 1)
+        layout_detail_layout.addWidget(detail_footer)
+        detail_stack.addWidget(layout_detail)
+        self._detail_view_widgets["layout"] = layout_detail
+
+        playlist_detail = self._build_playlist_detail_view(detail_stack)
+        detail_stack.addWidget(playlist_detail)
+        self._detail_view_widgets["audio"] = playlist_detail
 
         splitter.addWidget(explorer_container)
         splitter.addWidget(detail_container)
@@ -479,9 +525,13 @@ class MasterWindow(QMainWindow):
 
         self._icon_base_color = base_color
         self._icon_accent_color = highlight
+        playlist_accent = QColor(highlight)
+        playlist_accent = playlist_accent.lighter(120) if is_dark else playlist_accent.darker(110)
+        self._playlist_accent_color = playlist_accent
 
         self._style_symbol_buttons(highlight)
         self._style_status_buttons()
+        self._style_playlist_buttons()
         border_color = palette.color(QPalette.ColorRole.Mid)
         if is_dark:
             border_color = border_color.lighter(150)
@@ -527,6 +577,20 @@ class MasterWindow(QMainWindow):
         for button in self._status_buttons:
             button.setStyleSheet(style)
 
+    def _style_playlist_buttons(self) -> None:
+        if not self._playlist_buttons:
+            return
+        style = """
+        QToolButton {
+            background-color: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 4px;
+        }
+        """
+        for button in self._playlist_buttons:
+            button.setStyleSheet(style)
+
     def _style_view_borders(self, color: QColor) -> None:
         css_color = color.name(QColor.HexArgb)
         left_border = f"border-left: 1px solid {css_color};"
@@ -538,6 +602,19 @@ class MasterWindow(QMainWindow):
         top_border = f"border-top: 1px solid {css_color};"
         for header in self._header_views:
             header.setStyleSheet(top_border)
+        playlist_list = self._playlist_list
+        if playlist_list is not None:
+            playlist_list.setStyleSheet(
+                """
+                QListWidget { background: transparent; border: none; }
+                QListWidget::item:selected {
+                    background-color: rgba(255, 255, 255, 0.08);
+                    border: 1px dashed rgba(255, 255, 255, 0.25);
+                    border-radius: 10px;
+                    color: inherit;
+                }
+                """
+            )
 
     def _style_explorer_controls(self, border_color: QColor) -> None:
         css_color = border_color.name(QColor.HexArgb)
@@ -580,21 +657,40 @@ class MasterWindow(QMainWindow):
             self._detail_group_combo.setStyleSheet(combo_style)
 
     def _update_icon_colors(self) -> None:
+        alive_bindings: list[IconBinding] = []
         for binding in self._icon_bindings:
+            button = binding.button
+            if button is None or not Shiboken.isValid(button):
+                continue
+            alive_bindings.append(binding)
             path = (
                 binding.checked_icon_path
-                if binding.checked_icon_path and binding.button.isChecked()
+                if binding.checked_icon_path and button.isChecked()
                 else binding.icon_path
             )
-            color = (
-                self._icon_accent_color
-                if binding.accent_on_checked and binding.button.isChecked()
-                else self._icon_base_color
-            )
-            if isinstance(binding.button, IconToolButton) and binding.button.is_hovered:
+            if binding.accent_on_checked and button.isChecked():
+                if button.objectName().startswith("Playlist") and self._playlist_accent_color is not None:
+                    color = self._playlist_accent_color
+                else:
+                    color = self._icon_accent_color
+            else:
+                color = self._icon_base_color
+            if isinstance(button, IconToolButton) and button.is_hovered:
                 color = color.lighter(150)
-            tinted = self._tinted_icon(path, color, binding.button.iconSize())
-            binding.button.setIcon(tinted)
+            tinted = self._tinted_icon(path, color, button.iconSize())
+            button.setIcon(tinted)
+        self._icon_bindings = alive_bindings
+        self._refresh_playlist_icon_labels()
+
+    def _refresh_playlist_icon_labels(self) -> None:
+        alive: list[tuple[QLabel, Path]] = []
+        for label, path in self._playlist_icon_labels:
+            if label is None or not Shiboken.isValid(label):
+                continue
+            icon = self._tinted_icon(path, self._icon_base_color, QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE))
+            label.setPixmap(icon.pixmap(QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE)))
+            alive.append((label, path))
+        self._playlist_icon_labels = alive
         for action, path in self._line_edit_actions:
             tinted = self._tinted_icon(
                 path, self._icon_base_color, QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE)
@@ -603,6 +699,7 @@ class MasterWindow(QMainWindow):
 
     def _on_viewmodel_changed(self) -> None:
         self._slides = self._viewmodel.slides
+        self._populate_playlist_tracks()
 
     def attach_presentation_window(self, window: PresentationWindow) -> None:
         """Register an external presentation window instance."""
@@ -612,13 +709,55 @@ class MasterWindow(QMainWindow):
 
     def _wire_symbol_launchers(self) -> None:
         layout_button = self._symbol_button_map.get("LayoutExplorerLauncher")
-        if layout_button is None:
-            return
-        layout_button.toggled.connect(self._handle_layout_explorer_toggled)
-        self._handle_layout_explorer_toggled(layout_button.isChecked())
+        audio_button = self._symbol_button_map.get("AudioExplorerLauncher")
+        self._detail_mode_buttons = {
+            "layout": layout_button,
+            "audio": audio_button,
+        }
+        handlers_connected = False
+        for mode, button in self._detail_mode_buttons.items():
+            if button is None:
+                continue
+            handlers_connected = True
+            button.toggled.connect(lambda checked, mode=mode: self._handle_detail_launcher_toggled(mode, checked))
+        if handlers_connected:
+            self._initialize_detail_view_state()
 
-    def _handle_layout_explorer_toggled(self, checked: bool) -> None:
-        self._set_detail_views_visible(checked)
+    def _initialize_detail_view_state(self) -> None:
+        active_mode = self._resolve_checked_detail_mode()
+        if active_mode:
+            self._activate_detail_mode(active_mode)
+        else:
+            self._set_detail_views_visible(False)
+
+    def _handle_detail_launcher_toggled(self, mode: str, checked: bool) -> None:
+        if checked:
+            self._activate_detail_mode(mode)
+            return
+        replacement_mode = self._resolve_checked_detail_mode(exclude=mode)
+        if replacement_mode:
+            self._activate_detail_mode(replacement_mode)
+            return
+        if self._detail_active_mode == mode:
+            self._detail_active_mode = None
+            self._set_detail_views_visible(False)
+
+    def _resolve_checked_detail_mode(self, exclude: str | None = None) -> str | None:
+        for mode, button in self._detail_mode_buttons.items():
+            if exclude and mode == exclude:
+                continue
+            if button is not None and button.isChecked():
+                return mode
+        return None
+
+    def _activate_detail_mode(self, mode: str) -> None:
+        stack = self._detail_stack
+        widget = self._detail_view_widgets.get(mode)
+        if stack is None or widget is None:
+            return
+        stack.setCurrentWidget(widget)
+        self._detail_active_mode = mode
+        self._set_detail_views_visible(True)
 
     def _set_detail_views_visible(self, visible: bool) -> None:
         detail = self._detail_container
@@ -674,6 +813,356 @@ class MasterWindow(QMainWindow):
             vol_down.clicked.connect(lambda: adjust(-5))
         if vol_up := buttons.get("StatusVolumeUpButton"):
             vol_up.clicked.connect(lambda: adjust(5))
+
+    def _wire_playlist_volume_buttons(self) -> None:
+        slider = self._playlist_volume_slider
+        buttons = self._playlist_button_map
+        if slider is None or not buttons:
+            return
+
+        def adjust(delta: int) -> None:
+            slider.setValue(max(0, min(100, slider.value() + delta)))
+
+        mute = buttons.get("PlaylistMuteButton")
+        if mute is not None:
+            def handle_mute(checked: bool) -> None:
+                if checked:
+                    self._playlist_last_volume_value = slider.value()
+                    slider.setValue(0)
+                else:
+                    slider.setValue(self._playlist_last_volume_value)
+
+            mute.toggled.connect(handle_mute)
+
+        def remember_volume(value: int) -> None:
+            if mute is None or not mute.isChecked():
+                self._playlist_last_volume_value = value
+
+        slider.valueChanged.connect(remember_volume)
+
+        if vol_down := buttons.get("PlaylistVolumeDownButton"):
+            vol_down.clicked.connect(lambda: adjust(-5))
+        if vol_up := buttons.get("PlaylistVolumeUpButton"):
+            vol_up.clicked.connect(lambda: adjust(5))
+
+    def _populate_playlist_tracks(self) -> None:
+        list_view = self._playlist_list
+        if list_view is None:
+            return
+        slide = self._current_slide or self._viewmodel.current_slide
+        tracks = list(slide.audio.playlist) if slide and slide.audio.playlist else []
+        placeholder = self._playlist_empty_label
+        list_view.blockSignals(True)
+        list_view.clear()
+        self._playlist_icon_labels = []
+        if not tracks:
+            if placeholder is not None:
+                placeholder.show()
+        else:
+            if placeholder is not None:
+                placeholder.hide()
+        for index, track in enumerate(tracks):
+            widget = self._create_playlist_item_widget(track, index)
+            item = QListWidgetItem()
+            item.setSizeHint(widget.sizeHint())
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsDragEnabled
+                | Qt.ItemFlag.ItemIsDropEnabled
+            )
+            list_view.addItem(item)
+            list_view.setItemWidget(item, widget)
+        list_view.blockSignals(False)
+        self._refresh_playlist_icon_labels()
+
+    def _create_playlist_item_widget(self, track: PlaylistTrack, index: int) -> QWidget:
+        container = QFrame()
+        container.setObjectName(f"AudioPlaylistListItem_{index}")
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(8, 8, 8, 8)
+        container_layout.setSpacing(8)
+        container.setStyleSheet(
+            """
+            QFrame {
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 10px;
+            }
+            QToolButton, QLabel, QLineEdit {
+                background-color: transparent;
+                border: none;
+            }
+            QToolButton {
+                border-radius: 4px;
+                padding: 2px;
+            }
+            QToolButton:hover,
+            QToolButton:checked {
+                background-color: transparent;
+                border: none;
+            }
+            """
+        )
+
+        drag_handle = self._create_icon_label(
+            container,
+            f"PlaylistItemDragHandle_{index}",
+            PLAYLIST_ITEM_ICONS["drag"],
+            f"PlaylistItemDragHandle_{index}",
+        )
+        drag_handle.setCursor(Qt.CursorShape.OpenHandCursor)
+        drag_handle.setFixedSize(ICON_PIXMAP_SIZE + 6, ICON_PIXMAP_SIZE + 6)
+        drag_handle.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        container_layout.addWidget(drag_handle)
+
+        play_button = self._create_icon_button(
+            container,
+            f"PlaylistItemPlayButton_{index}",
+            PLAYLIST_ITEM_ICONS["play"],
+            f"PlaylistItemPlayButton_{index}",
+            checkable=True,
+            accent_on_checked=True,
+            checked_icon_path=PLAYLIST_ITEM_ICONS["stop"],
+        )
+        container_layout.addWidget(play_button)
+
+        title_source = Path(track.source).name if track.source else ""
+        title_text = track.title.strip() or title_source or "Unbenannter Track"
+        title_label = QLabel(title_text, container)
+        title_label.setObjectName(f"PlaylistItemTitleLabel_{index}")
+        title_label.setToolTip(f"PlaylistItemTitleLabel_{index}")
+        title_label.setMinimumWidth(160)
+        container_layout.addWidget(title_label, 1)
+
+        current_time_label = QLabel(self._format_time(track.position_seconds), container)
+        current_time_label.setObjectName(f"PlaylistItemCurrentTimeLabel_{index}")
+        current_time_label.setToolTip(f"PlaylistItemCurrentTimeLabel_{index}")
+        current_time_label.setFixedWidth(56)
+        current_time_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        container_layout.addWidget(current_time_label)
+
+        seek_slider = QSlider(Qt.Orientation.Horizontal, container)
+        seek_slider.setObjectName(f"PlaylistItemSeekSlider_{index}")
+        seek_slider.setToolTip(f"PlaylistItemSeekSlider_{index}")
+        seek_slider.setRange(0, 10_000)
+        seek_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
+        duration = max(track.duration_seconds, 0.0)
+        position = max(min(track.position_seconds, duration), 0.0)
+        if duration > 0:
+            ratio = position / duration if duration else 0.0
+            seek_slider.setValue(int(ratio * seek_slider.maximum()))
+            seek_slider.setEnabled(True)
+        else:
+            seek_slider.setValue(0)
+            seek_slider.setEnabled(False)
+        seek_shell = self._wrap_slider(seek_slider, container)
+        seek_shell.setObjectName(f"PlaylistItemSeekShell_{index}")
+        container_layout.addWidget(seek_shell, 2)
+
+        duration_label = QLabel(self._format_time(duration), container)
+        duration_label.setObjectName(f"PlaylistItemDurationLabel_{index}")
+        duration_label.setToolTip(f"PlaylistItemDurationLabel_{index}")
+        duration_label.setFixedWidth(56)
+        duration_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        container_layout.addWidget(duration_label)
+
+        fade_in_icon = self._create_icon_label(
+            container,
+            f"PlaylistItemFadeInIcon_{index}",
+            PLAYLIST_ITEM_ICONS["fade_in"],
+            f"PlaylistItemFadeInIcon_{index}",
+        )
+        container_layout.addWidget(fade_in_icon)
+
+        fade_in_input = QLineEdit(container)
+        fade_in_input.setObjectName(f"PlaylistItemFadeInInput_{index}")
+        fade_in_input.setToolTip(f"PlaylistItemFadeInInput_{index}")
+        fade_in_input.setFixedWidth(46)
+        fade_in_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fade_in_input.setStyleSheet("color: palette(window-text);")
+        fade_in_input.setPlaceholderText("0.0")
+        fade_in_validator = QDoubleValidator(0.0, 9999.0, 1, fade_in_input)
+        fade_in_input.setValidator(fade_in_validator)
+        if track.fade_in_seconds > 0:
+            fade_in_input.setText(f"{track.fade_in_seconds:.1f}")
+        container_layout.addWidget(fade_in_input)
+
+        fade_out_input = QLineEdit(container)
+        fade_out_input.setObjectName(f"PlaylistItemFadeOutInput_{index}")
+        fade_out_input.setToolTip(f"PlaylistItemFadeOutInput_{index}")
+        fade_out_input.setFixedWidth(46)
+        fade_out_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fade_out_input.setStyleSheet("color: palette(window-text);")
+        fade_out_input.setPlaceholderText("0.0")
+        fade_out_validator = QDoubleValidator(0.0, 9999.0, 1, fade_out_input)
+        fade_out_input.setValidator(fade_out_validator)
+        if track.fade_out_seconds > 0:
+            fade_out_input.setText(f"{track.fade_out_seconds:.1f}")
+        container_layout.addWidget(fade_out_input)
+
+        fade_out_icon = self._create_icon_label(
+            container,
+            f"PlaylistItemFadeOutIcon_{index}",
+            PLAYLIST_ITEM_ICONS["fade_out"],
+            f"PlaylistItemFadeOutIcon_{index}",
+        )
+        container_layout.addWidget(fade_out_icon)
+
+        delete_button = self._create_icon_button(
+            container,
+            f"PlaylistItemDeleteButton_{index}",
+            PLAYLIST_ITEM_ICONS["delete"],
+            f"PlaylistItemDeleteButton_{index}",
+        )
+        container_layout.addWidget(delete_button)
+        delete_button.clicked.connect(lambda _checked=False, idx=index: self._handle_playlist_item_deleted(idx))
+        return container
+
+    @staticmethod
+    def _format_time(seconds: float) -> str:
+        if seconds <= 0:
+            return "00:00"
+        minutes = int(seconds) // 60
+        remainder = int(seconds) % 60
+        return f"{minutes:02d}:{remainder:02d}"
+
+    def _handle_playlist_files_dropped(self, paths: list[str]) -> None:
+        if not paths:
+            return
+        self._viewmodel.add_playlist_tracks(paths)
+        self._current_slide = self._viewmodel.current_slide
+        self._populate_playlist_tracks()
+
+    def _handle_playlist_order_changed(self) -> None:
+        list_view = self._playlist_list
+        if list_view is None or list_view.count() == 0:
+            return
+        order: list[int] = []
+        for row in range(list_view.count()):
+            item = list_view.item(row)
+            idx = item.data(Qt.ItemDataRole.UserRole)
+            if idx is None:
+                return
+            order.append(int(idx))
+        self._viewmodel.reorder_playlist_tracks(order)
+        self._current_slide = self._viewmodel.current_slide
+        self._populate_playlist_tracks()
+
+    def _handle_playlist_item_deleted(self, index: int) -> None:
+        self._viewmodel.remove_playlist_track(index)
+        self._current_slide = self._viewmodel.current_slide
+        self._populate_playlist_tracks()
+
+    def _build_playlist_detail_view(self, parent: QWidget | None = None) -> QWidget:
+        view = QWidget(parent)
+        view.setObjectName("PlaylistDetailView")
+        layout = QVBoxLayout(view)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        header = QFrame(view)
+        header.setObjectName("PlaylistDetailHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(8, 8, 8, 8)
+        header_layout.setSpacing(8)
+        title = QLabel("Playlist-Steuerung", header)
+        title.setObjectName("PlaylistDetailTitleLabel")
+        title.setStyleSheet("font-weight: 600;")
+        header_layout.addWidget(title)
+        header_layout.addStretch(1)
+        layout.addWidget(header)
+
+        playlist_container = QFrame(view)
+        playlist_container.setObjectName("AudioPlaylistView")
+        playlist_container.setFrameShape(QFrame.Shape.StyledPanel)
+        playlist_layout = QVBoxLayout(playlist_container)
+        playlist_layout.setContentsMargins(12, 12, 12, 12)
+        playlist_layout.setSpacing(8)
+
+        playlist_title = QLabel("Playlist", playlist_container)
+        playlist_title.setObjectName("AudioPlaylistTitleLabel")
+        playlist_title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        playlist_layout.addWidget(playlist_title)
+
+        playlist_body = QWidget(playlist_container)
+        playlist_body_layout = QVBoxLayout(playlist_body)
+        playlist_body_layout.setContentsMargins(0, 0, 0, 0)
+        playlist_body_layout.setSpacing(4)
+
+        playlist_placeholder = QLabel(
+            "Noch keine Audiodateien in der Playlist. Ziehe Dateien hierher oder füge sie über die Toolbar hinzu.",
+            playlist_body,
+        )
+        playlist_placeholder.setObjectName("AudioPlaylistPlaceholderLabel")
+        playlist_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        playlist_placeholder.setWordWrap(True)
+        playlist_placeholder.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        playlist_body_layout.addWidget(playlist_placeholder)
+        self._playlist_empty_label = playlist_placeholder
+
+        playlist_list = PlaylistListWidget(playlist_body)
+        playlist_list.setObjectName("AudioPlaylistListView")
+        playlist_list.setMinimumHeight(160)
+        playlist_body_layout.addWidget(playlist_list, 1)
+        playlist_layout.addWidget(playlist_body, 1)
+        self._playlist_list = playlist_list
+        playlist_list.filesDropped.connect(self._handle_playlist_files_dropped)
+        playlist_list.orderChanged.connect(self._handle_playlist_order_changed)
+
+        controls_footer = QFrame(view)
+        controls_footer.setObjectName("PlaylistDetailFooter")
+        controls_footer.setFrameShape(QFrame.Shape.NoFrame)
+        self._playlist_footer = controls_footer
+        controls_layout = QHBoxLayout(controls_footer)
+        controls_layout.setContentsMargins(8, 6, 8, 6)
+        controls_layout.setSpacing(12)
+
+        transport_layout = QHBoxLayout()
+        transport_layout.setContentsMargins(0, 0, 0, 0)
+        transport_layout.setSpacing(4)
+        transport_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        volume_layout = QHBoxLayout()
+        volume_layout.setContentsMargins(0, 0, 0, 0)
+        volume_layout.setSpacing(4)
+        volume_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        def layout_selector(spec: ButtonSpec) -> QHBoxLayout:
+            return volume_layout if spec.name in PLAYLIST_VOLUME_BUTTONS else transport_layout
+
+        playlist_button_map = self._build_buttons(
+            controls_footer,
+            transport_layout,
+            PLAYLIST_CONTROL_SPECS,
+            size=STATUS_ICON_SIZE,
+            registry=self._playlist_buttons,
+            layout_getter=layout_selector,
+        )
+        self._playlist_button_map = playlist_button_map
+
+        playlist_volume_slider = QSlider(Qt.Orientation.Horizontal, controls_footer)
+        playlist_volume_slider.setObjectName("PlaylistVolumeSlider")
+        playlist_volume_slider.setRange(0, 100)
+        playlist_volume_slider.setValue(75)
+        playlist_volume_slider.setFixedWidth(140)
+        playlist_volume_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
+        self._playlist_volume_slider = playlist_volume_slider
+        playlist_volume_shell = self._wrap_slider(playlist_volume_slider, controls_footer)
+        if (shell_layout := playlist_volume_shell.layout()) is not None:
+            shell_layout.setContentsMargins(4, 5, 4, 0)
+        volume_layout.insertWidget(2, playlist_volume_shell)
+        self._wire_playlist_volume_buttons()
+
+        controls_layout.addLayout(transport_layout)
+        controls_layout.addStretch(1)
+        controls_layout.addLayout(volume_layout)
+
+        layout.addWidget(playlist_container, 1)
+        layout.addWidget(controls_footer)
+        self._populate_playlist_tracks()
+        return view
 
     def _populate_related_layouts(self) -> None:
         layout = self._related_layout_layout
@@ -963,6 +1452,7 @@ class MasterWindow(QMainWindow):
             layout_id = ""
             images = {}
         self._set_current_layout(layout_id, images)
+        self._populate_playlist_tracks()
 
     def _update_detail_header(self, slide: SlideData | None) -> None:
         title = slide.title if slide else "Titel"
@@ -1033,6 +1523,21 @@ class MasterWindow(QMainWindow):
             button.toggled.connect(lambda _=False: self._update_icon_colors())
         button.hoverChanged.connect(lambda _=False: self._update_icon_colors())
         return button
+
+    def _create_icon_label(
+        self,
+        parent: QWidget,
+        object_name: str,
+        icon_path: Path,
+        tooltip: str,
+    ) -> QLabel:
+        label = QLabel(parent)
+        label.setObjectName(object_name)
+        label.setToolTip(tooltip)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setFixedSize(ICON_PIXMAP_SIZE + 4, ICON_PIXMAP_SIZE + 4)
+        self._playlist_icon_labels.append((label, icon_path))
+        return label
 
     def _build_buttons(
         self,

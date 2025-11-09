@@ -10,6 +10,7 @@ SlideQuest ist ein PySide6-Prototyp für das Erstellen und Präsentieren von Mul
 | App starten | `uv run slidequest` / `make run` |
 | Hot Reload | `uv run slidequest-dev` / `make dev` |
 | Paket hinzufügen | `uv add <paket>` |
+| Tests | `make test` (PySide6/pytest im Offscreen-Modus) |
 
 Weitere Hinweise:
 

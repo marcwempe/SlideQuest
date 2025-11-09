@@ -6,6 +6,7 @@ from typing import Any
 
 from slidequest.models.layouts import LAYOUT_ITEMS
 from slidequest.models.slide import (
+    PlaylistTrack,
     SlideAudioPayload,
     SlideData,
     SlideLayoutPayload,
@@ -49,13 +50,36 @@ class SlideStorage:
             layout_data.get("thumbnail_url") or "",
             list(layout_data.get("content") or []),
         )
+        playlist_entries = []
+        for entry in audio_data.get("playlist") or []:
+            if isinstance(entry, str):
+                source = entry.strip()
+                if not source:
+                    continue
+                playlist_entries.append(PlaylistTrack(source=source))
+                continue
+            if isinstance(entry, dict):
+                source = (entry.get("source") or "").strip()
+                if not source:
+                    continue
+                playlist_entries.append(
+                    PlaylistTrack(
+                        source=source,
+                        title=entry.get("title") or "",
+                        duration_seconds=float(entry.get("duration_seconds") or 0.0),
+                        position_seconds=float(entry.get("position_seconds") or 0.0),
+                        fade_in_seconds=float(entry.get("fade_in_seconds") or 0.0),
+                        fade_out_seconds=float(entry.get("fade_out_seconds") or 0.0),
+                    )
+                )
+
         slide = SlideData(
             title=data.get("title") or "Unbenannte Folie",
             subtitle=data.get("subtitle") or "",
             group=data.get("group") or "",
             layout=layout,
             audio=SlideAudioPayload(
-                playlist=list(audio_data.get("playlist") or []),
+                playlist=playlist_entries,
                 effects=list(audio_data.get("effects") or []),
             ),
             notes=SlideNotesPayload(
@@ -75,7 +99,17 @@ class SlideStorage:
                 "content": list(slide.layout.content),
             },
             "audio": {
-                "playlist": list(slide.audio.playlist),
+                "playlist": [
+                    {
+                        "source": track.source,
+                        "title": track.title,
+                        "duration_seconds": track.duration_seconds,
+                        "position_seconds": track.position_seconds,
+                        "fade_in_seconds": track.fade_in_seconds,
+                        "fade_out_seconds": track.fade_out_seconds,
+                    }
+                    for track in slide.audio.playlist
+                ],
                 "effects": list(slide.audio.effects),
             },
             "notes": {

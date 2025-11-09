@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import (
+    PlaylistTrack,
     SlideAudioPayload,
     SlideData,
     SlideLayoutPayload,
@@ -110,6 +112,51 @@ class MasterViewModel:
         if changed:
             self.persist()
             self._notify()
+
+    def add_playlist_tracks(self, sources: list[str]) -> None:
+        slide = self.current_slide
+        if slide is None or not sources:
+            return
+        added = False
+        for raw in sources:
+            normalized = normalize_media_path(raw)
+            if not normalized:
+                continue
+            track = PlaylistTrack(
+                source=normalized,
+                title=Path(normalized).name,
+            )
+            slide.audio.playlist.append(track)
+            added = True
+        if added:
+            self.persist()
+            self._notify()
+
+    def remove_playlist_track(self, index: int) -> None:
+        slide = self.current_slide
+        if slide is None:
+            return
+        if not (0 <= index < len(slide.audio.playlist)):
+            return
+        del slide.audio.playlist[index]
+        self.persist()
+        self._notify()
+
+    def reorder_playlist_tracks(self, order: list[int]) -> None:
+        slide = self.current_slide
+        if slide is None or not slide.audio.playlist:
+            return
+        if len(order) != len(slide.audio.playlist):
+            return
+        seen = set(order)
+        if len(seen) != len(order):
+            return
+        if min(order) < 0 or max(order) >= len(slide.audio.playlist):
+            return
+        reordered = [slide.audio.playlist[i] for i in order]
+        slide.audio.playlist = reordered
+        self.persist()
+        self._notify()
 
     # --- persistence ---------------------------------------------------
     def persist(self) -> None:

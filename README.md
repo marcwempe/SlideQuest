@@ -8,6 +8,7 @@ PySide6 prototype for building and presenting mixed-media slides. SlideQuest shi
 - **Install**: `uv sync` (creates `.venv` and installs PySide6 + dev tools).
 - **One-off run**: `uv run slidequest` or `make run`.
 - **Hot reload**: `uv run slidequest-dev` / `make dev` (watchfiles-based).
+- **Tests**: `make test` (runs pytest + Qt widgets headless via `QT_QPA_PLATFORM=offscreen`).
 - **Add dependency**: `uv add <package>`.
 - Prefer `rg` for file/text search; keep sources ASCII unless Unicode is already in use.
 - **CI**: `.github/workflows/python.yml` installs uv, runs flake8, and executes pytest on every push/PR targeting `main`.

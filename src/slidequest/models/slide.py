@@ -4,6 +4,16 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class PlaylistTrack:
+    source: str
+    title: str = ""
+    duration_seconds: float = 0.0
+    position_seconds: float = 0.0
+    fade_in_seconds: float = 0.0
+    fade_out_seconds: float = 0.0
+
+
+@dataclass
 class SlideLayoutPayload:
     active_layout: str
     thumbnail_url: str = ""
@@ -12,7 +22,7 @@ class SlideLayoutPayload:
 
 @dataclass
 class SlideAudioPayload:
-    playlist: list[str] = field(default_factory=list)
+    playlist: list[PlaylistTrack] = field(default_factory=list)
     effects: list[str] = field(default_factory=list)
 
 
