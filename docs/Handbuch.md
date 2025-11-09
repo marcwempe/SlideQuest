@@ -2,6 +2,11 @@
 
 > Dieses Handbuch ist die maßgebliche Referenz für alle Arbeiten an SlideQuest. Es folgt der Obsidian-Struktur; die deutschsprachige README im Projektstamm fasst die wichtigsten Punkte zusammen.
 
+## Urheber & Lizenz
+
+- SlideQuest wird vollständig durch OpenAI Codex umgesetzt; alle Änderungen stammen aus aufgezeichneten Codex-Sitzungen.
+- Der komplette Quellcode steht unter der GNU General Public License v3.0 (siehe `LICENSE` im Repo). Weitergaben müssen diesen Lizenztext und die i18n-Richtlinien berücksichtigen.
+
 ## Entwicklungsprinzipien
 
 - Bevorzuge einfache Lösungen und halte die kognitive Komplexität so gering wie möglich.

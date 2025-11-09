@@ -50,19 +50,9 @@ Der Dev-Watcher nutzt `watchfiles`, um die GUI automatisch neu zu starten, sobal
 
 ### Layout-Referenz
 
-![MasterWindow Layout](assets/MasterWindow_GeneralLayout.png)
+![Layout-Ansicht](docs/assets/LayoutViewScreenshot.png)
 
-Die Abbildung zeigt die aktuelle Zwei-\*Drei-Teilung des MasterWindow (StatusBar, SymbolView, Explorer- und Detail-Bereiche mit ihren Subviews) und dient als visuelle Grundlage für weitere Anpassungen.
-
-![MasterWindow Steuerzentrale](assets/MasterWindow_ZentraleSteuerelemente.png)
-
-Die zweite Grafik zoomt auf die Statusbar und die SymbolView: Sie zeigt Navigations-Buttons (Layout, Audio, Note, File) und die Audio-Steuerung (Seekbar, Transport, Volume) als verbindliche Referenz für Beschriftungen und Interaktion.
-Im ExplorerHeaderView sitzen Suchfeld und Filter-Button (Bootstrap-Icons `search`/`filter`), während der ExplorerFooterView derzeit `ExplorerCreateButton` und `ExplorerDeleteButton` für CRUD-Fälle anbietet (weitere Aktionen folgen bei Bedarf).
-Zusätzliche Symbolleisten-Icons (Audio, Dateien, Fenster, Layouts) liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/` bereit. Die SymbolView fungiert als Navigation: Jeder Button öffnet eine Sub-Anwendung im Explorer- und Detailbereich. Der `FileExplorerLauncher` lädt die programmeigene Asset-Library für Bilder, Videos, Audios und Markdown-Dateien; `NoteExplorerLauncher`, `AudioExplorerLauncher` und `LayoutExplorerLauncher` folgen demselben Muster für weitere Spezialbereiche.
-
-![MasterWindow Steuerzentrale mit Explorer](assets/MasterWinder_ZentraleSteuerelemente_MitExplorer.png)
-
-Die dritte Grafik kombiniert SymbolView, Statusbar und Explorer-Header/-Footer als globale Steuerzentrale, unabhängig von der Sub-App.
+Der Screenshot zeigt StatusBar, SymbolView, Explorer- und Detailbereiche inklusive Layout-Auswahl. Such- und Filter-Controls sitzen im ExplorerHeaderView, CRUD-Buttons im ExplorerFooterView. Die SymbolView dient als Navigation für Layout-, Audio-, Notiz- und Datei-Subapps; alle Icons stammen aus `assets/icons/bootstrap/<kategorie>/`.
 
 ### Slides & Datenmodell
 
@@ -74,3 +64,8 @@ Die dritte Grafik kombiniert SymbolView, Statusbar und Explorer-Header/-Footer a
 ### Nächste Schritte
 
 Neue Module gehören nach `src/slidequest` (z. B. Slide-Parsing, Datenquellen, Layoutlogik). Der aktuelle Doppel-Fenster-Aufbau dient als Grundlage für weitere Features – ersetze die Platzhalter schrittweise durch die produktiven Komponenten.
+
+### Herkunft & Lizenz
+
+- SlideQuest wird vollständig von OpenAI Codex programmiert; sämtliche Commits stammen aus dokumentierten Codex-Sitzungen.
+- Der vollständige Lizenztext liegt in `LICENSE` und stellt den Code unter die **GNU General Public License v3.0**. Jede Weitergabe muss diese Lizenz sowie die i18n-Richtlinien des Projekts respektieren.
