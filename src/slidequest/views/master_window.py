@@ -197,6 +197,7 @@ class MasterWindow(QMainWindow):
         explorer_container.setObjectName("ExplorerView")
         self._explorer_container = explorer_container
         explorer_container.setMinimumWidth(282)
+        explorer_container.setStyleSheet("background-color: transparent;")
         explorer_layout = QVBoxLayout(explorer_container)
         explorer_layout.setContentsMargins(0, 0, 0, 0)
         explorer_layout.setSpacing(0)
@@ -248,13 +249,14 @@ class MasterWindow(QMainWindow):
 
         explorer_main = QWidget()
         explorer_main.setObjectName("ExplorerMainView")
+        explorer_main.setStyleSheet("background-color: transparent;")
         explorer_main_layout = QVBoxLayout(explorer_main)
         explorer_main_layout.setContentsMargins(4, 4, 4, 4)
         explorer_main_layout.setSpacing(4)
         self._slide_list = QListWidget(explorer_main)
         self._slide_list.setObjectName("SlideListView")
         self._slide_list.setSpacing(6)
-        self._slide_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
+        self._slide_list.setStyleSheet("QListWidget { background: transparent; border: 1px solid rgba(56, 155, 166, 0.3); border-radius: 8px; }")
         explorer_main_layout.addWidget(self._slide_list)
         explorer_main_scroll.setWidget(explorer_main)
         self._slide_list.currentItemChanged.connect(
@@ -363,6 +365,7 @@ class MasterWindow(QMainWindow):
         self._detail_preview_canvas = LayoutPreviewCanvas(initial_layout, detail_main, accepts_drop=True)
         self._detail_preview_canvas.setObjectName("DetailPreviewCanvas")
         self._detail_preview_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._detail_preview_canvas.setStyleSheet("background-color: transparent;")
         self._detail_preview_canvas.areaDropped.connect(self._handle_preview_drop)
         detail_main_layout.addWidget(self._detail_preview_canvas, 1)
         if initial_images:
@@ -374,6 +377,7 @@ class MasterWindow(QMainWindow):
         detail_footer_layout.setSpacing(8)
         related_scroll = QScrollArea(detail_footer)
         related_scroll.setObjectName("LayoutSelectorScroll")
+        related_scroll.setStyleSheet("background-color: transparent;")
         related_scroll.setWidgetResizable(True)
         related_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         related_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -382,6 +386,7 @@ class MasterWindow(QMainWindow):
 
         related_items_container = QWidget()
         related_items_container.setObjectName("LayoutSelectorContainer")
+        related_items_container.setStyleSheet("background-color: transparent;")
         horizontal_layout = QHBoxLayout(related_items_container)
         horizontal_layout.setContentsMargins(0, 0, 0, 0)
         horizontal_layout.setSpacing(8)
@@ -429,8 +434,7 @@ class MasterWindow(QMainWindow):
         left_layout = QHBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(8)
-        left_container.setStyleSheet("QWidget { background-color: #293940; border-radius: 8px; }")
-
+        
         title_container = QWidget(left_container)
         title_container_layout = QVBoxLayout(title_container)
 
@@ -444,12 +448,9 @@ class MasterWindow(QMainWindow):
 
         title_container_layout.setContentsMargins(4, 4, 4, 4)
         title_container_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        title = QLabel("SideQuest", title_container)
+        title = QLabel("SlideQuest", title_container)
         title.setObjectName("StatusTitleLabel")
         title.setStyleSheet("font-weight: 600; color: #6DF2F2;")
-        subtitle = QLabel("Live Session", title_container)
-        subtitle.setStyleSheet("font-size: 10px; color: #A7D0D9;")
-        title_container_layout.addWidget(subtitle)
         title_container_layout.addWidget(title)
         left_layout.addWidget(title_container, 1)
 
