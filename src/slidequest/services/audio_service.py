@@ -25,6 +25,7 @@ class AudioService(QObject):
         self._pending_play: set[int] = set()
 
     def set_tracks(self, tracks: list[PlaylistTrack]) -> None:
+        was_empty = not self._tracks
         self._tracks = tracks or []
         invalid = [idx for idx in self._players.keys() if idx >= len(self._tracks)]
         for idx in invalid:
@@ -34,33 +35,14 @@ class AudioService(QObject):
         self._auto_next_triggered = {idx for idx in self._auto_next_triggered if idx < len(self._tracks)}
         self._manual_stop_fades = {idx for idx in self._manual_stop_fades if idx < len(self._tracks)}
         self._pending_play = {idx for idx in self._pending_play if idx < len(self._tracks)}
+        if self._tracks and not self._players and was_empty:
+            self._ensure_player(0, preload_only=True)
 
     def play(self, index: int, position_ms: int | None = None) -> None:
-        if not (0 <= index < len(self._tracks)):
-            return
-        track = self._tracks[index]
-        source_path = resolve_media_path(track.source)
-        if not Path(source_path).exists():
-            return
-        slot = self._players.get(index)
+        slot = self._ensure_player(index)
         if slot is None:
-            player = QMediaPlayer()
-            output = QAudioOutput()
-            player.setAudioOutput(output)
-            player.setSource(QUrl.fromLocalFile(source_path))
-            slot = (player, output)
-            self._players[index] = slot
-            player.positionChanged.connect(lambda pos, idx=index: self._handle_position_changed(idx, pos))
-            player.durationChanged.connect(lambda dur, idx=index: self._handle_duration_changed(idx, dur))
-            player.playbackStateChanged.connect(
-                lambda state, idx=index: self._handle_state_changed(idx, state)
-            )
-            player.mediaStatusChanged.connect(
-                lambda status, idx=index: self._handle_media_status_changed(idx, status)
-            )
-        else:
-            self._stop_fade_animation(index)
-            slot[0].setSource(QUrl.fromLocalFile(source_path))
+            return
+        self._stop_fade_animation(index)
         if position_ms is not None:
             slot[0].setPosition(position_ms)
         slot[1].setVolume(1.0)
@@ -217,6 +199,38 @@ class AudioService(QObject):
         animation.finished.connect(finished)
         self._fade_animations[index] = animation
         animation.start()
+
+    def _ensure_player(self, index: int, *, preload_only: bool = False) -> tuple[QMediaPlayer, QAudioOutput] | None:
+        if not (0 <= index < len(self._tracks)):
+            return None
+        track = self._tracks[index]
+        source_path = resolve_media_path(track.source)
+        if not Path(source_path).exists():
+            return None
+        desired_url = QUrl.fromLocalFile(source_path)
+        slot = self._players.get(index)
+        if slot is None:
+            player = QMediaPlayer()
+            output = QAudioOutput()
+            player.setAudioOutput(output)
+            player.setSource(desired_url)
+            slot = (player, output)
+            self._players[index] = slot
+            player.positionChanged.connect(lambda pos, idx=index: self._handle_position_changed(idx, pos))
+            player.durationChanged.connect(lambda dur, idx=index: self._handle_duration_changed(idx, dur))
+            player.playbackStateChanged.connect(
+                lambda state, idx=index: self._handle_state_changed(idx, state)
+            )
+            player.mediaStatusChanged.connect(
+                lambda status, idx=index: self._handle_media_status_changed(idx, status)
+            )
+        else:
+            player, _output = slot
+            if player.source() != desired_url:
+                player.setSource(desired_url)
+        if preload_only:
+            return slot
+        return slot
 
     def _stop_fade_animation(self, index: int) -> None:
         animation = self._fade_animations.pop(index, None)

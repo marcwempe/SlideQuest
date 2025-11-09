@@ -212,8 +212,8 @@ class ExplorerSectionMixin:
         app = QApplication.instance()
         if app is not None:
             app.processEvents()
-        target_name = f\"{slugify(slide.title)}-{self._slides.index(slide) + 1}\"
-        target_path = THUMBNAIL_DIR / f\"{target_name}.png\"
+        target_name = f"{slugify(slide.title)}-{self._slides.index(slide) + 1}"
+        target_path = THUMBNAIL_DIR / f"{target_name}.png"
         target_path.parent.mkdir(parents=True, exist_ok=True)
         pixmap = QPixmap(widget.size())
         widget.render(pixmap)
@@ -223,7 +223,7 @@ class ExplorerSectionMixin:
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        if not scaled.save(str(target_path), \"PNG\"):
+        if not scaled.save(str(target_path), "PNG"):
             return False
         try:
             relative = target_path.relative_to(PROJECT_ROOT)
@@ -252,13 +252,13 @@ class ExplorerSectionMixin:
 
     def _create_slide_list_widget(self, slide: SlideData) -> QWidget:
         container = QFrame()
-        container.setObjectName(\"SlideListViewItem\")
+        container.setObjectName("SlideListViewItem")
         container_layout = QHBoxLayout(container)
         container_layout.setContentsMargins(8, 8, 8, 8)
         container_layout.setSpacing(12)
 
         preview_label = QLabel(container)
-        preview_label.setObjectName(\"SlideItemPreview\")
+        preview_label.setObjectName("SlideItemPreview")
         preview_label.setFixedSize(96, 72)
         preview_label.setPixmap(self._build_preview_pixmap(slide))
         preview_label.setScaledContents(True)
@@ -267,15 +267,15 @@ class ExplorerSectionMixin:
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
         title = QLabel(slide.title, container)
-        title.setObjectName(\"SlideItemTitle\")
+        title.setObjectName("SlideItemTitle")
         title_font = QFont(title.font())
         title_font.setPointSize(max(12, title_font.pointSize()))
         title_font.setWeight(QFont.Weight.DemiBold)
         title.setFont(title_font)
         subtitle = QLabel(slide.subtitle, container)
-        subtitle.setObjectName(\"SlideItemSubtitle\")
+        subtitle.setObjectName("SlideItemSubtitle")
         group = QLabel(slide.group, container)
-        group.setObjectName(\"SlideItemGroup\")
+        group.setObjectName("SlideItemGroup")
         group_font = QFont(group.font())
         group_font.setPointSize(max(10, group_font.pointSize() - 2))
         group.setFont(group_font)
@@ -303,6 +303,6 @@ class ExplorerSectionMixin:
         painter = QPainter(pix)
         painter.setPen(QColor(120, 120, 120))
         painter.drawRect(1, 1, 94, 70)
-        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, \"Preview\")
+        painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "Preview")
         painter.end()
         return pix

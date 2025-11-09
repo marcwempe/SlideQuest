@@ -416,6 +416,7 @@ class PlaylistSectionMixin:
         self._populate_playlist_tracks()
 
     def _handle_playlist_play_toggled(self, index: int, checked: bool) -> None:
+        self._ensure_audio_service_tracks()
         if checked:
             track = self._get_playlist_track(index)
             start_pos = int(track.position_seconds * 1000) if track and track.position_seconds > 0 else None
@@ -427,6 +428,7 @@ class PlaylistSectionMixin:
         self._seek_active[index] = True
 
     def _handle_seek_released(self, index: int) -> None:
+        self._ensure_audio_service_tracks()
         slider = self._playlist_seek_sliders.get(index)
         duration = self._playlist_track_durations.get(index)
         self._seek_active[index] = False
@@ -474,6 +476,7 @@ class PlaylistSectionMixin:
             track.position_seconds = position / 1000
 
     def _handle_audio_duration_changed(self, index: int, duration: int) -> None:
+        self._ensure_audio_service_tracks()
         self._playlist_track_durations[index] = duration
         label = self._playlist_duration_labels.get(index)
         if label is not None:
@@ -524,3 +527,7 @@ class PlaylistSectionMixin:
             self._audio_service.set_tracks(slide.audio.playlist)
             self._viewmodel.persist()
 
+    def _ensure_audio_service_tracks(self) -> None:
+        slide = self._current_slide or self._viewmodel.current_slide
+        if slide is not None:
+            self._audio_service.set_tracks(slide.audio.playlist)
