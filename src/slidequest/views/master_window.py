@@ -117,7 +117,10 @@ class MasterWindow(QMainWindow):
         self._volume_button_map: dict[str, QToolButton] = {}
         self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
-        self._playlist_accent_color = QColor("#5c8dff")
+        self._playlist_accent_color = QColor("#389BA6")
+        palette = self.palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor("#152126"))
+        self.setPalette(palette)
         self._audio_service = AudioService()
         self._storage = SlideStorage()
         self._viewmodel = MasterViewModel(self._storage)
@@ -133,9 +136,9 @@ class MasterWindow(QMainWindow):
         self._related_layout_cards: list[LayoutPreviewCard] = []
         self._playlist_empty_label: QLabel | None = None
         self._current_layout_id: str = ""
-        self._icon_base_color = QColor("#ffffff")
-        self._icon_accent_color = QColor("#ffffff")
-        self._container_color = QColor("#222222")
+        self._icon_base_color = QColor("#A7D0D9")
+        self._icon_accent_color = QColor("#A7D0D9")
+        self._container_color = QColor("#152126")
         self._content_splitter: QSplitter | None = None
         self._detail_last_sizes: list[int] = []
         self._setup_placeholder()
@@ -426,13 +429,7 @@ class MasterWindow(QMainWindow):
         left_layout = QHBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(8)
-
-        artwork = QLabel(left_container)
-        artwork.setObjectName("StatusArtwork")
-        artwork.setFixedSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
-        artwork.setStyleSheet(
-            "background-color: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2);"
-        )
+        left_container.setStyleSheet("QWidget { background-color: #293940; border-radius: 8px; }")
 
         title_container = QWidget(left_container)
         title_container_layout = QVBoxLayout(title_container)
@@ -449,9 +446,11 @@ class MasterWindow(QMainWindow):
         title_container_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         title = QLabel("SideQuest", title_container)
         title.setObjectName("StatusTitleLabel")
-        title.setStyleSheet("font-weight: 600;")
+        title.setStyleSheet("font-weight: 600; color: #6DF2F2;")
+        subtitle = QLabel("Live Session", title_container)
+        subtitle.setStyleSheet("font-size: 10px; color: #A7D0D9;")
+        title_container_layout.addWidget(subtitle)
         title_container_layout.addWidget(title)
-        left_layout.addWidget(artwork)
         left_layout.addWidget(title_container, 1)
 
         center_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
@@ -628,8 +627,8 @@ class MasterWindow(QMainWindow):
                 """
                 QListWidget { background: transparent; border: none; }
                 QListWidget::item:selected {
-                    background-color: rgba(255, 255, 255, 0.08);
-                    border: 1px dashed rgba(255, 255, 255, 0.25);
+                    background-color: rgba(167, 208, 217, 0.08);
+                    border: 1px dashed rgba(167, 208, 217, 0.25);
                     border-radius: 8px;
                     color: inherit;
                 }
