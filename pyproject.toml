@@ -12,6 +12,12 @@ dependencies = [
     "watchfiles>=0.21",
 ]
 
+[dependency-groups]
+dev = [
+    "flake8>=7.0",
+    "pytest>=8.0",
+]
+
 [project.scripts]
 slidequest = "slidequest:main"
 slidequest-dev = "slidequest.dev:main"

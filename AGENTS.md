@@ -1,32 +1,34 @@
 # SlideQuest Agent Brief
 
+This document is exclusively for automation agents. Keep the human-facing context in `README.md` (English) and `Liesmich.md` (Deutsch) untouched.
+
 ## Scope
-- Build in `src/slidequest`; leave `MTMT*` untouched unless the user says otherwise.
-- Keep commits incremental and avoid destructive git.
-- `MTMT/` carries its own `.git`; only add it here (as a submodule) if explicitly requested.
+- Work only inside `src/slidequest`, `assets`, `data`, and root-level docs unless the user explicitly extends the scope.
+- Never touch legacy folders or external repos without confirmation.
+- Keep commits incremental; destructive git commands are forbidden unless the user instructs otherwise.
 
 ## Principles
-- Prefer simple code and keep cognitive complexity low.
-- Favor smaller, focused files over large ones.
-- Ask the user before acting if their request is ambiguous.
-- Keep `AGENTS.md` and `README.md` current; AGENTS/Tasks stay in English, während `docs/Handbuch.md` bewusst deutschsprachig bleibt.
-- If a request implies a large change, capture it in `Tasks.md`, split it into prompt-sized subtasks, and tackle them incrementally.
-- [IMPORTANT] Documentation must stay current: user-facing docs (e.g., `README.md`) are written in German (with umlauts), technical docs (`AGENTS.md`, `docs/`, `Tasks.md`) stay in English.
-- Treat every component as a reusable module; design APIs and layouts so they work independently of the surrounding UI.
-- When asked to color layout elements for validation, use bold, high-contrast colors so regions remain unmistakable.
-- Ensure all user-facing strings are i18n-ready and respect the OS locale (e.g., German UI when the system language is German).
+- Prefer simple, low-complexity code and small, focused files.
+- Treat every component as a reusable module with explicit inputs/outputs.
+- Ask the user whenever a request is ambiguous.
+- Track large or multi-step requests in `Tasks.md` before coding.
+- Documentation split: `README.md` (EN) + `Liesmich.md` (DE) for humans, `AGENTS.md` + `Tasks.md` for technical/agent content—keep them up to date.
+- When asked to tint layouts for validation, use bold, high-contrast colors.
+- All user-facing strings must remain i18n-ready and follow the OS locale (German UI on German systems).
 
 ## Tooling
-- Use uv (`uv add`, `uv sync`, `uv run`) or the matching `make run|dev|sync` shortcuts.
-- Launch the UI with `uv run slidequest`; hot reload via `uv run slidequest-dev` / `make dev`.
-- Prefer `rg` for search and stay in ASCII unless a file already uses Unicode.
+- Use `uv` (`uv add`, `uv sync`, `uv run`) or the equivalent `make run|dev|sync`.
+- Launch the GUI via `uv run slidequest`; for hot reload use `uv run slidequest-dev` or `make dev`.
+- Prefer `rg` for search; stay ASCII unless a file already uses Unicode.
+- CI runs `uv sync --all-groups`, `flake8`, and `pytest` (see `.github/workflows/python.yml`). Ensure those commands succeed locally when relevant.
 
-## Coding
-- Entry point: `src/slidequest/app.py`. Keep widgets modular.
-- Shared config/notes live in root markdown files; add comments only when intent is unclear.
-- Maintain the two-window setup: `MasterWindow` (controls) + `PresentationWindow` (slides).
-- Persist slide content in `data/slides.json` and keep the Explorer thumbnails in sync by re-rendering the `PresentationWindow` into `assets/thumbnails/…` whenever layouts or dropped media change.
+## Coding Guidelines
+- Entry point: `src/slidequest/app.py`; keep widgets modular and the two-window architecture intact.
+- Persist slide content in `data/slides.json`. Whenever layouts or dropped media change, rerender the `PresentationWindow` to update `assets/thumbnails/...`.
+- Shared config/notes live in root markdown files; add inline comments only to clarify non-obvious logic.
+- Icons must adapt to light/dark themes (light icons on dark backgrounds, dark icons on light backgrounds).
+- Tooltips must expose unique IDs for every control to aid documentation.
 
 ## Communication
-- Summaries lead with the “why,” then the “what,” and list TODOs/follow-ups.
-- Stop and ask if tools touch unexpected files or instructions are unclear.
+- Summaries lead with the “why,” then the “what,” followed by TODOs/follow-ups.
+- Stop immediately if a command touches unexpected files or if instructions are unclear, and ask the user for guidance.

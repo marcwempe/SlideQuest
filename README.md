@@ -1,71 +1,102 @@
-## SlideQuest (PySide6-Prototyp)
+# SlideQuest
 
-Dieses Verzeichnis enthält den neuen SlideQuest-Prototyp, der langfristig die `MTMT*`-Legacy-Apps ersetzt. Die UI basiert auf **PySide6**, Abhängigkeiten werden vollständig mit **uv** verwaltet.
+PySide6 prototype for building and presenting mixed-media slides. SlideQuest ships two coordinated windows—`MasterWindow` for control and `PresentationWindow` for projection—and keeps every UI string i18n-ready so the runtime language follows the OS locale. The entire codebase is produced by OpenAI Codex sessions and is licensed under the GNU GPL v3.
 
-> Dieses README ist die deutschsprachige Kurzfassung des SlideQuest-Handbuchs in `docs/Handbuch.md` (Obsidian-Struktur). Beide Dokumente müssen nach jeder Prozessänderung aktualisiert werden.
+## Guiding Principles
 
-### Handbuch-Highlights
+- Prefer small, modular files with low cognitive overhead.
+- Treat every view/component as a reusable widget with explicit inputs.
+- Ask for clarification whenever requirements are ambiguous; capture large features in `Tasks.md` before implementation.
+- Keep documentation in lockstep with the product: this README (English) and `Liesmich.md` (German) are the single sources of truth.
+- When views must be tinted for validation, use bold, high-contrast colors that are easy to distinguish.
+- All user-facing text must support localization; default to German UI when the host OS is German.
 
-- Bevorzuge einfache Lösungen, kleine Dateien und halte die kognitive Komplexität so gering wie möglich.
-- Kläre Rückfragen, bevor du baust, sobald Anforderungen nicht eindeutig sind.
-- Dokumentiere große Features in `Tasks.md`, zerlege sie in promptgerechte Schritte und arbeite sie iterativ ab.
-- Halte `AGENTS.md` (KI-Anweisungen) und dieses README immer synchron mit dem Handbuch.
-- Wenn Layoutbereiche zum Test eingefärbt werden sollen, nutze knallige, klar unterscheidbare Farben.
-- Jede Komponente wird so gebaut, dass sie sich isoliert wiederverwenden lässt (saubere Eingaben, keine versteckten Seiteneffekte).
-- Sämtliche Texte müssen i18n-fähig sein; die gewählte Sprache richtet sich nach der Systemsprache (UI lokalisiert sich automatisch).
+## Tooling & Commands
 
-### Systemvoraussetzungen
+- **Runtime**: Python 3.12+, [uv](https://docs.astral.sh/uv/) for dependency management.
+- **Install**: `uv sync` (creates `.venv` and installs PySide6 + dev tools).
+- **One-off run**: `uv run slidequest` or `make run`.
+- **Hot reload**: `uv run slidequest-dev` / `make dev` (watchfiles-based).
+- **Add dependency**: `uv add <package>`.
+- Prefer `rg` for file/text search; keep sources ASCII unless Unicode is already in use.
+- **CI**: `.github/workflows/python.yml` installs uv, runs flake8, and executes pytest on every push/PR targeting `main`.
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) (global installiert, z. B. per `pip install uv`)
+## Workspace Layout
 
-### Einrichtung
+- `src/slidequest/app.py` – entry point, window wiring, symbol/status bars.
+- `src/slidequest/models/…` – dataclasses for layouts and slides.
+- `src/slidequest/viewmodels/…` – viewmodels (e.g., `MasterViewModel`) that mediate persistence and UI.
+- `src/slidequest/services/storage.py` – JSON persistence helpers.
+- `src/slidequest/views/widgets/layout_preview.py` – reusable layout canvas + cards.
+- `assets/` – design references + generated thumbnails (`assets/thumbnails/*.png`).
+- `docs/assets/LayoutViewScreenshot.png` – latest UI snapshot used in documentation.
+- `Tasks.md` – backlog for multi-step efforts.
+- `AGENTS.md` – operational rules for automation agents.
 
-```bash
-uv sync
+![Layout overview](docs/assets/LayoutViewScreenshot.png)
+
+*MasterWindow anatomy: StatusBar, SymbolView (navigation), Explorer (header/main/footer), Detail view (header/main/footer + layout selection carousel).*
+
+## Slides & Data Model
+
+Slides live in `data/slides.json` and follow this structure:
+
+```json
+{
+  "slides": [
+    {
+      "title": "My Slide",
+      "subtitle": "Layout Example",
+      "group": "My Group",
+      "layout": {
+        "active_layout": "2S|60:40/1R:100/1R:100",
+        "thumbnail_url": "assets/thumbnails/example.png",
+        "content": [
+          "media/image.png",
+          "media/photo.jpg",
+          "media/video.mp4"
+        ]
+      },
+      "audio": {
+        "playlist": ["media/music.mp3"],
+        "effects": ["media/effect.ogg"]
+      },
+      "notes": {
+        "notebooks": ["notes/show.md"]
+      }
+    }
+  ]
+}
 ```
 
-Damit wird ein lokales `.venv` erzeugt und alle Abhängigkeiten installiert.
+- `layout.content[i]` corresponds to area `#i+1` in the active layout description. Layout changes never delete surplus media; unused items reappear when a compatible layout is chosen again.
+- Drag & drop in the Detail Preview updates `layout.content`, syncs the Presentation window, and captures a fresh thumbnail stored under `assets/thumbnails/<slug>.png`.
+- Layout presets are defined in `src/slidequest/models/layouts.py`; each card in the Detail footer is built from these specs.
 
-### Tägliche Befehle
+## Status & Navigation Surfaces
 
-| Aufgabe | Befehl |
-| --- | --- |
-| GUI einmal starten | `uv run slidequest` / `make run` |
-| Hot-Reload starten | `uv run slidequest-dev` / `make dev` |
-| Neue Abhängigkeit hinzufügen | `uv add <paket>` |
+- **SymbolView** (left) exposes launchers for Layout, Audio, Notes, Files. Each button opens its sub-app inside Explorer + Detail views and shows a left accent when active.
+- **StatusBar** (top) groups artwork/title placeholders, transport controls (shuffle, previous, play/pause, stop, next, loop), seek bar, and volume cluster (mute, down, slider, up). Buttons share the same styling primitives as SymbolView; active states use the palette accent color.
+- **PresentationWindow** is hidden until explicitly launched via the window button anchored at the bottom of SymbolView. Only one presentation window exists at a time; once it closes, the launcher re-enables.
 
-Der Dev-Watcher nutzt `watchfiles`, um die GUI automatisch neu zu starten, sobald sich Dateien in `src/slidequest` oder `pyproject.toml` ändern. Die `make`-Targets sind Kurzformen für die entsprechenden uv-Aufrufe (`make run`, `make dev`, `make sync`).
+## Localization & Accessibility
 
-### Projektstruktur
+- Every button, slider, or input has a tooltip exposing its unique ID to simplify references in documentation or automation.
+- UI strings must be routed through the localization utilities established in `ui/constants.py` (planned), defaulting to the OS language.
+- Icons from Bootstrap SVG packs (`assets/icons/bootstrap/<domain>/…`) must adapt to light/dark palettes: near-white in dark mode, near-black in light mode.
 
-- `src/slidequest/app.py` – Einstiegspunkt sowie Verkabelung von Master- und Presentation-Window.
-- `src/slidequest/dev.py` – Watchfiles-basierter Dev-Loop.
-- `AGENTS.md` – Instruktionen für KI-Agenten (englisch, technisch).
-- `docs/Handbuch.md` – kanonisches Handbuch (deutsch, Obsidian-kompatibel).
-- `Tasks.md` – Backlog für umfangreiche Aufgaben, aufgeteilt in promptfähige Teilaufgaben.
-- `assets/` – Referenzmaterial (z. B. Layout-Skizzen); `assets/thumbnails/` enthält generierte Layout-Vorschauen.
-- `data/slides.json` – Persistente Slide-Liste inkl. Layout-, Audio- und Notizzuweisungen.
-- `MTMT*` – Legacy-Projekt (nur lesen, nicht verändern).
+## Provenance & License
 
-### Layout-Referenz
+- SlideQuest is authored entirely by OpenAI Codex; no human-written legacy code remains.
+- Source code is distributed under the **GNU General Public License v3.0**. See `LICENSE` for the full text and obligations when redistributing modified copies.
+- Contributions should retain this license, respect the localization rules, and document changes in both README (en) and `Liesmich.md` (de).
 
-![Layout-Ansicht](docs/assets/LayoutViewScreenshot.png)
+## Git Workflow
 
-Der Screenshot zeigt StatusBar, SymbolView, Explorer- und Detailbereiche inklusive Layout-Auswahl. Such- und Filter-Controls sitzen im ExplorerHeaderView, CRUD-Buttons im ExplorerFooterView. Die SymbolView dient als Navigation für Layout-, Audio-, Notiz- und Datei-Subapps; alle Icons stammen aus `assets/icons/bootstrap/<kategorie>/`.
-
-### Slides & Datenmodell
-
-- `ExplorerMainView` listet jetzt Slides, nicht mehr Layoutvorlagen. Angezeigt werden Titel, Untertitel, Gruppe und ein Thumbnail des letzten gespeicherten Layout-Arrangements.
-- Die Daten stammen aus `data/slides.json` und folgen exakt der im Handbuch dokumentierten Struktur (Layout-Block mit `active_layout`, `thumbnail_url`, `content`, dazu Audio-Playlists und Notiz-Links). Die Einträge unter `content` gehören zum Slide selbst – Index `i` repräsentiert Layoutbereich `#i`. Beim Layoutwechsel wird nur die Darstellung, nicht der Bestand, verändert.
-- Die `LayoutSelectionList` enthält sämtliche Templates (`LAYOUT_ITEMS`). Ein Wechsel setzt `layout.active_layout`, verwirft nicht mehr passende Drop-Zuweisungen und erzeugt direkt ein neues Thumbnail, indem das `PresentationWindow` off-screen gerendert und in `assets/thumbnails/<slug>.png` gespeichert wird.
-- Gleiches gilt beim Ersetzen einzelner Bereiche per Drag & Drop: Die Bildpfade werden relativ zum Projekt gespeichert, der neue Zustand persistent aktualisiert und sofort als Thumbnail angezeigt.
-
-### Nächste Schritte
-
-Neue Module gehören nach `src/slidequest` (z. B. Slide-Parsing, Datenquellen, Layoutlogik). Der aktuelle Doppel-Fenster-Aufbau dient als Grundlage für weitere Features – ersetze die Platzhalter schrittweise durch die produktiven Komponenten.
-
-### Herkunft & Lizenz
-
-- SlideQuest wird vollständig von OpenAI Codex programmiert; sämtliche Commits stammen aus dokumentierten Codex-Sitzungen.
-- Der vollständige Lizenztext liegt in `LICENSE` und stellt den Code unter die **GNU General Public License v3.0**. Jede Weitergabe muss diese Lizenz sowie die i18n-Richtlinien des Projekts respektieren.
+1. **Sync & Branch** – Update `main` (`git pull origin main`) and start a feature branch (`git checkout -b feature/<topic>`). Avoid committing directly to `main`.
+2. **Focused Work** – Keep change sets small, update documentation/localization alongside code, and capture large scopes in `Tasks.md`.
+3. **Test Locally** – Run `uv run slidequest` or `make dev`; add targeted checks for regressions when possible.
+4. **Curate Staging** – Use `git status` plus `git add -p` to stage only intentional edits; generated assets (e.g., thumbnails) should be confirmed before inclusion.
+5. **Commit Message** – Present-tense summary with context (“Add horizontal layout selector”). Reference related tasks if applicable.
+6. **Push & Review** – `git push -u origin feature/<topic>` and open a PR against `main`, noting i18n/doc updates.
+7. **Merge & Clean** – After review, merge (squash or fast-forward), delete the feature branch locally/remotely, and resync your workspace.
