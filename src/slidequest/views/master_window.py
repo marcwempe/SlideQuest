@@ -934,13 +934,13 @@ class MasterWindow(QMainWindow):
         container.setStyleSheet(
             """
             QFrame {
-                background-color: rgba(255, 255, 255, 0.05);
-                border: 1px solid rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(167, 208, 217, 0.25);
                 border-radius: 8px;
             }
             QToolButton, QLabel, QLineEdit {
                 background-color: transparent;
                 border: none;
+                color: #A7D0D9;
             }
             QToolButton {
                 border-radius: 4px;
