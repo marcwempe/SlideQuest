@@ -44,6 +44,7 @@ SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         "Layoutübersicht öffnen",
         checkable=True,
         auto_exclusive=True,
+        checked_by_default=True,
     ),
     ButtonSpec(
         "AudioExplorerLauncher",

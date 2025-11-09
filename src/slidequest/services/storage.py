@@ -12,7 +12,7 @@ from slidequest.models.slide import (
     SlideNotesPayload,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = PROJECT_ROOT / "data"
 SLIDES_FILE = DATA_DIR / "slides.json"
 THUMBNAIL_DIR = PROJECT_ROOT / "assets" / "thumbnails"

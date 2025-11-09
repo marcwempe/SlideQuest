@@ -3,9 +3,14 @@ from __future__ import annotations
 from typing import Callable
 
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
-from slidequest.models.slide import SlideData
+from slidequest.models.slide import (
+    SlideAudioPayload,
+    SlideData,
+    SlideLayoutPayload,
+    SlideNotesPayload,
+)
 from slidequest.services.storage import SlideStorage
-from slidequest.views.utils import normalize_media_path
+from slidequest.utils.media import normalize_media_path
 
 
 class MasterViewModel:
@@ -110,6 +115,38 @@ class MasterViewModel:
     def persist(self) -> None:
         self._storage.save_slides(self._slides)
 
+    def create_slide(self, layout_id: str | None = None, group: str | None = None) -> SlideData:
+        layout_id = layout_id or (LAYOUT_ITEMS[0].layout if LAYOUT_ITEMS else "1S|100/1R|100")
+        group = group or (LAYOUT_ITEMS[0].group if LAYOUT_ITEMS else "All")
+        slide = SlideData(
+            title="Neue Folie",
+            subtitle="",
+            group=group,
+            layout=SlideLayoutPayload(layout_id, "", []),
+            audio=SlideAudioPayload(),
+            notes=SlideNotesPayload(),
+            images={},
+        )
+        defaults = self._default_images_for_layout(layout_id)
+        if defaults:
+            slide.images = defaults.copy()
+            slide.layout.content = self._images_to_content(slide.images)
+        self._slides.append(slide)
+        self._current_index = len(self._slides) - 1
+        self.persist()
+        self._notify()
+        return slide
+
+    def delete_slide(self, index: int) -> SlideData | None:
+        if len(self._slides) <= 1 or not (0 <= index < len(self._slides)):
+            return None
+        deleted = self._slides.pop(index)
+        if self._current_index >= len(self._slides):
+            self._current_index = len(self._slides) - 1
+        self.persist()
+        self._notify()
+        return deleted
+
     # --- utility -------------------------------------------------------
     @staticmethod
     def _content_to_images(content: list[str]) -> dict[int, str]:
@@ -118,6 +155,23 @@ class MasterViewModel:
             if path:
                 images[index + 1] = path
         return images
+
+    @staticmethod
+    def _images_to_content(images: dict[int, str]) -> list[str]:
+        if not images:
+            return []
+        max_area = max((area_id for area_id in images.keys() if area_id > 0), default=0)
+        if max_area <= 0:
+            return []
+        content = ["" for _ in range(max_area)]
+        for area_id, path in images.items():
+            if area_id <= 0 or not path:
+                continue
+            index = area_id - 1
+            if index >= len(content):
+                content.extend([""] * (index + 1 - len(content)))
+            content[index] = path
+        return content
 
     @staticmethod
     def _default_images_for_layout(layout_id: str) -> dict[int, str]:

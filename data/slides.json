@@ -5,7 +5,7 @@
       "subtitle": "Was zuletzt geschah",
       "group": "17B",
       "layout": {
-        "active_layout": "2S|75:25/1R|100/4R|25:25:25:25",
+        "active_layout": "1S|100/1R|100",
         "thumbnail_url": "assets/thumbnails/intro-1.png",
         "content": [
           "/Users/marcwempe/Downloads/SceneImage_1.png",

@@ -2,15 +2,6 @@
 
 PySide6 prototype for building and presenting mixed-media slides. SlideQuest ships two coordinated windows—`MasterWindow` for control and `PresentationWindow` for projection—and keeps every UI string i18n-ready so the runtime language follows the OS locale. The entire codebase is produced by OpenAI Codex sessions and is licensed under the GNU GPL v3.
 
-## Guiding Principles
-
-- Prefer small, modular files with low cognitive overhead.
-- Treat every view/component as a reusable widget with explicit inputs.
-- Ask for clarification whenever requirements are ambiguous; capture large features in `Tasks.md` before implementation.
-- Keep documentation in lockstep with the product: this README (English) and `Liesmich.md` (German) are the single sources of truth.
-- When views must be tinted for validation, use bold, high-contrast colors that are easy to distinguish.
-- All user-facing text must support localization; default to German UI when the host OS is German.
-
 ## Tooling & Commands
 
 - **Runtime**: Python 3.12+, [uv](https://docs.astral.sh/uv/) for dependency management.
@@ -23,14 +14,16 @@ PySide6 prototype for building and presenting mixed-media slides. SlideQuest shi
 
 ## Workspace Layout
 
-- `src/slidequest/app.py` – entry point, window wiring, symbol/status bars.
+- `src/slidequest/app.py` – thin entry point that wires Master/Presentation windows.
 - `src/slidequest/models/…` – dataclasses for layouts and slides.
 - `src/slidequest/viewmodels/…` – viewmodels (e.g., `MasterViewModel`) that mediate persistence and UI.
 - `src/slidequest/services/storage.py` – JSON persistence helpers.
+- `src/slidequest/views/master_window.py` – full `MasterWindow` implementation and supporting widgets.
+- `src/slidequest/views/presentation_window.py` – secondary window that mirrors the active layout.
 - `src/slidequest/views/widgets/layout_preview.py` – reusable layout canvas + cards.
+- `src/slidequest/utils/media.py` – helpers for slug/asset path handling.
 - `assets/` – design references + generated thumbnails (`assets/thumbnails/*.png`).
 - `docs/assets/LayoutViewScreenshot.png` – latest UI snapshot used in documentation.
-- `Tasks.md` – backlog for multi-step efforts.
 - `AGENTS.md` – operational rules for automation agents.
 
 ![Layout overview](docs/assets/LayoutViewScreenshot.png)
@@ -94,7 +87,7 @@ Slides live in `data/slides.json` and follow this structure:
 ## Git Workflow
 
 1. **Sync & Branch** – Update `main` (`git pull origin main`) and start a feature branch (`git checkout -b feature/<topic>`). Avoid committing directly to `main`.
-2. **Focused Work** – Keep change sets small, update documentation/localization alongside code, and capture large scopes in `Tasks.md`.
+2. **Focused Work** – Keep change sets small, update documentation/localization alongside code, and surface large scopes before implementation.
 3. **Test Locally** – Run `uv run slidequest` or `make dev`; add targeted checks for regressions when possible.
 4. **Curate Staging** – Use `git status` plus `git add -p` to stage only intentional edits; generated assets (e.g., thumbnails) should be confirmed before inclusion.
 5. **Commit Message** – Present-tense summary with context (“Add horizontal layout selector”). Reference related tasks if applicable.
