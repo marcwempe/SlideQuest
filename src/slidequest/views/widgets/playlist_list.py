@@ -19,6 +19,19 @@ class PlaylistListWidget(QListWidget):
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setSpacing(8)
+        self.viewport().setAutoFillBackground(False)
+        self.setStyleSheet(
+            """
+            QListWidget {
+                background-color: transparent;
+                border: none;
+            }
+            QListWidget::item {
+                background-color: transparent;
+                border: none;
+            }
+            """
+        )
         self.setAlternatingRowColors(False)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)

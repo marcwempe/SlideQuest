@@ -2,11 +2,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal, QEvent, QTimer, QObject
 from PySide6.QtGui import (
     QAction,
     QColor,
     QDoubleValidator,
+    QFont,
     QIcon,
     QMouseEvent,
     QPalette,
@@ -117,10 +118,7 @@ class MasterWindow(QMainWindow):
         self._volume_button_map: dict[str, QToolButton] = {}
         self._last_volume_value = 75
         self._icon_bindings: list[IconBinding] = []
-        self._playlist_accent_color = QColor("#389BA6")
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("#152126"))
-        self.setPalette(palette)
+        self._playlist_accent_color = self.palette().color(QPalette.ColorRole.Highlight)
         self._audio_service = AudioService()
         self._storage = SlideStorage()
         self._viewmodel = MasterViewModel(self._storage)
@@ -136,12 +134,18 @@ class MasterWindow(QMainWindow):
         self._related_layout_cards: list[LayoutPreviewCard] = []
         self._playlist_empty_label: QLabel | None = None
         self._current_layout_id: str = ""
-        self._icon_base_color = QColor("#A7D0D9")
-        self._icon_accent_color = QColor("#A7D0D9")
-        self._container_color = QColor("#152126")
+        self._icon_base_color = self.palette().color(QPalette.ColorRole.Text)
+        self._icon_accent_color = self.palette().color(QPalette.ColorRole.Highlight)
+        self._container_color = self.palette().color(QPalette.ColorRole.Window)
         self._content_splitter: QSplitter | None = None
         self._detail_last_sizes: list[int] = []
         self._setup_placeholder()
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj is self._content_splitter and event.type() in {QEvent.Type.Resize, QEvent.Type.Show}:
+            QTimer.singleShot(0, self._apply_splitter_sizes)
+        return super().eventFilter(obj, event)
+
 
     def _setup_placeholder(self) -> None:
         central = QWidget(self)
@@ -190,14 +194,11 @@ class MasterWindow(QMainWindow):
         splitter.setObjectName("ContentSplitter")
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(8)
-        splitter.splitterMoved.connect(self._enforce_splitter_ratio)
         self._content_splitter = splitter
 
         explorer_container = QWidget(splitter)
         explorer_container.setObjectName("ExplorerView")
         self._explorer_container = explorer_container
-        explorer_container.setMinimumWidth(282)
-        explorer_container.setStyleSheet("background-color: transparent;")
         explorer_layout = QVBoxLayout(explorer_container)
         explorer_layout.setContentsMargins(0, 0, 0, 0)
         explorer_layout.setSpacing(0)
@@ -249,14 +250,26 @@ class MasterWindow(QMainWindow):
 
         explorer_main = QWidget()
         explorer_main.setObjectName("ExplorerMainView")
-        explorer_main.setStyleSheet("background-color: transparent;")
         explorer_main_layout = QVBoxLayout(explorer_main)
         explorer_main_layout.setContentsMargins(4, 4, 4, 4)
         explorer_main_layout.setSpacing(4)
         self._slide_list = QListWidget(explorer_main)
         self._slide_list.setObjectName("SlideListView")
+        self._slide_list.setFrameShape(QFrame.Shape.NoFrame)
+        self._slide_list.viewport().setAutoFillBackground(False)
+        self._slide_list.setStyleSheet(
+            """
+            QListWidget#SlideListView {
+                background-color: transparent;
+                border: none;
+            }
+            QListWidget#SlideListView::item {
+                background-color: transparent;
+                border: none;
+            }
+            """
+        )
         self._slide_list.setSpacing(6)
-        self._slide_list.setStyleSheet("QListWidget { background: transparent; border: 1px solid rgba(56, 155, 166, 0.3); border-radius: 8px; }")
         explorer_main_layout.addWidget(self._slide_list)
         explorer_main_scroll.setWidget(explorer_main)
         self._slide_list.currentItemChanged.connect(
@@ -286,7 +299,6 @@ class MasterWindow(QMainWindow):
         detail_container = QWidget(splitter)
         detail_container.setObjectName("DetailView")
         self._detail_container = detail_container
-        detail_container.setMinimumWidth(282)
         detail_layout = QVBoxLayout(detail_container)
         detail_layout.setContentsMargins(0, 0, 0, 0)
         detail_layout.setSpacing(0)
@@ -304,6 +316,7 @@ class MasterWindow(QMainWindow):
 
         detail_header = QFrame(layout_detail)
         detail_header.setObjectName("DetailHeader")
+        detail_header.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         detail_header.setFixedHeight(DETAIL_HEADER_HEIGHT)
         self._header_views.append(detail_header)
         detail_header_layout = QHBoxLayout(detail_header)
@@ -341,6 +354,7 @@ class MasterWindow(QMainWindow):
 
         detail_footer = QFrame(layout_detail)
         detail_footer.setObjectName("DetailFooter")
+        detail_footer.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         detail_footer.setMinimumHeight(220)
         detail_footer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         detail_footer.setVisible(True)
@@ -365,7 +379,6 @@ class MasterWindow(QMainWindow):
         self._detail_preview_canvas = LayoutPreviewCanvas(initial_layout, detail_main, accepts_drop=True)
         self._detail_preview_canvas.setObjectName("DetailPreviewCanvas")
         self._detail_preview_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._detail_preview_canvas.setStyleSheet("background-color: transparent;")
         self._detail_preview_canvas.areaDropped.connect(self._handle_preview_drop)
         detail_main_layout.addWidget(self._detail_preview_canvas, 1)
         if initial_images:
@@ -377,7 +390,6 @@ class MasterWindow(QMainWindow):
         detail_footer_layout.setSpacing(8)
         related_scroll = QScrollArea(detail_footer)
         related_scroll.setObjectName("LayoutSelectorScroll")
-        related_scroll.setStyleSheet("background-color: transparent;")
         related_scroll.setWidgetResizable(True)
         related_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         related_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -386,7 +398,6 @@ class MasterWindow(QMainWindow):
 
         related_items_container = QWidget()
         related_items_container.setObjectName("LayoutSelectorContainer")
-        related_items_container.setStyleSheet("background-color: transparent;")
         horizontal_layout = QHBoxLayout(related_items_container)
         horizontal_layout.setContentsMargins(0, 0, 0, 0)
         horizontal_layout.setSpacing(8)
@@ -412,6 +423,7 @@ class MasterWindow(QMainWindow):
         splitter.addWidget(detail_container)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
+        splitter.installEventFilter(self)
         self._apply_splitter_sizes()
 
         viewport_layout.addWidget(symbol_view)
@@ -450,7 +462,9 @@ class MasterWindow(QMainWindow):
         title_container_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         title = QLabel("SlideQuest", title_container)
         title.setObjectName("StatusTitleLabel")
-        title.setStyleSheet("font-weight: 600; color: #6DF2F2;")
+        title_font = QFont(title.font())
+        title_font.setWeight(QFont.Weight.DemiBold)
+        title.setFont(title_font)
         title_container_layout.addWidget(title)
         left_layout.addWidget(title_container, 1)
 
@@ -522,47 +536,36 @@ class MasterWindow(QMainWindow):
         window_color = palette.color(QPalette.ColorRole.Window)
         is_dark = window_color.value() < 128
 
-        surface_color = window_color.darker(130 if is_dark else 115)
+        darker_ratio = 135 if is_dark else 120
+        darker_surface = window_color.darker(darker_ratio)
+        for widget in (self._status_bar, self._symbol_view):
+            if widget is not None:
+                self._apply_surface_tint(widget, darker_surface)
 
         highlight = palette.color(QPalette.ColorRole.Highlight)
 
-        if self._status_bar is not None:
-            self._tint_surface(self._status_bar, surface_color)
-        if self._symbol_view is not None:
-            self._tint_surface(self._symbol_view, surface_color)
-        explorer_color = window_color.darker(120 if is_dark else 110)
-        detail_color = window_color.darker(115 if is_dark else 108)
-        if self._explorer_container is not None:
-            self._tint_surface(self._explorer_container, explorer_color)
-        if self._detail_container is not None:
-            self._tint_surface(self._detail_container, detail_color)
-
-        icon_base = palette.color(
-            QPalette.ColorRole.BrightText if is_dark else QPalette.ColorRole.Text
-        )
-        base_color = icon_base.lighter(185) if is_dark else icon_base.darker(180)
-
-        self._icon_base_color = base_color
+        icon_base_role = QPalette.ColorRole.BrightText if is_dark else QPalette.ColorRole.Text
+        self._icon_base_color = palette.color(icon_base_role)
         self._icon_accent_color = highlight
-        playlist_accent = QColor(highlight)
-        playlist_accent = playlist_accent.lighter(120) if is_dark else playlist_accent.darker(110)
+
+        playlist_accent = palette.color(QPalette.ColorRole.Link)
+        if not playlist_accent.isValid() or playlist_accent == highlight:
+            playlist_accent = palette.color(QPalette.ColorRole.AlternateBase)
+        if not playlist_accent.isValid():
+            playlist_accent = highlight
         self._playlist_accent_color = playlist_accent
 
         self._style_symbol_buttons(highlight)
         self._style_status_buttons()
         self._style_playlist_buttons()
         border_color = palette.color(QPalette.ColorRole.Mid)
-        if is_dark:
-            border_color = border_color.lighter(150)
-        else:
-            border_color = border_color.darker(120)
         self._style_view_borders(border_color)
         self._style_explorer_controls(border_color)
         self._style_detail_inputs(border_color)
         self._update_icon_colors()
 
     @staticmethod
-    def _tint_surface(widget: QFrame, color: QColor) -> None:
+    def _apply_surface_tint(widget: QWidget, color: QColor) -> None:
         palette = widget.palette()
         palette.setColor(QPalette.ColorRole.Window, color)
         widget.setAutoFillBackground(True)
@@ -611,70 +614,13 @@ class MasterWindow(QMainWindow):
             button.setStyleSheet(style)
 
     def _style_view_borders(self, color: QColor) -> None:
-        css_color = color.name(QColor.HexArgb)
-        left_border = f"border-left: 1px solid {css_color};"
-        explorer_css = left_border + f"border-right: 1px solid {css_color};"
-        if self._explorer_container is not None:
-            self._explorer_container.setStyleSheet(explorer_css)
-        if self._detail_container is not None:
-            self._detail_container.setStyleSheet(left_border)
-        top_border = f"border-top: 1px solid {css_color};"
-        for header in self._header_views:
-            header.setStyleSheet(top_border)
-        playlist_list = self._playlist_list
-        if playlist_list is not None:
-            playlist_list.setSpacing(6)
-            playlist_list.setStyleSheet(
-                """
-                QListWidget { background: transparent; border: none; }
-                QListWidget::item:selected {
-                    background-color: rgba(167, 208, 217, 0.08);
-                    border: 1px dashed rgba(167, 208, 217, 0.25);
-                    border-radius: 8px;
-                    color: inherit;
-                }
-                """
-            )
+        return
 
     def _style_explorer_controls(self, border_color: QColor) -> None:
-        css_color = border_color.name(QColor.HexArgb)
-        text_color = self.palette().color(QPalette.ColorRole.Text).name(QColor.HexArgb)
-        if self._search_input is not None:
-            self._search_input.setStyleSheet(
-                f"QLineEdit {{ background: transparent; border: 1px solid {css_color};"
-                f"border-radius: 8px; padding: 0 10px; color: {text_color}; }}"
-            )
-        button_style = """
-        QToolButton {
-            background-color: transparent;
-            border: none;
-            padding: 4px;
-        }
-        """
-        if self._filter_button is not None:
-            self._filter_button.setStyleSheet(button_style)
-        for btn in self._crud_buttons:
-            btn.setStyleSheet(button_style)
+        return
 
     def _style_detail_inputs(self, border_color: QColor) -> None:
-        css_color = border_color.name(QColor.HexArgb)
-        text_color = self.palette().color(QPalette.ColorRole.Text).name(QColor.HexArgb)
-        base_color = self.palette().color(QPalette.ColorRole.Base).name(QColor.HexArgb)
-        lineedit_style = (
-            f"QLineEdit {{ background: transparent; border: 1px solid {css_color};"
-            f"border-radius: 8px; padding: 0 10px; color: {text_color}; }}"
-        )
-        combo_style = (
-            f"QComboBox {{ background: transparent; border: 1px solid {css_color};"
-            f"border-radius: 8px; padding: 0 10px; color: {text_color}; }}"
-            f"QComboBox QAbstractItemView {{ background-color: {base_color}; }}"
-        )
-        if self._detail_title_input:
-            self._detail_title_input.setStyleSheet(lineedit_style)
-        if self._detail_subtitle_input:
-            self._detail_subtitle_input.setStyleSheet(lineedit_style)
-        if self._detail_group_combo:
-            self._detail_group_combo.setStyleSheet(combo_style)
+        return
 
     def _update_icon_colors(self) -> None:
         alive_bindings: list[IconBinding] = []
@@ -816,8 +762,8 @@ class MasterWindow(QMainWindow):
         total = splitter.width() or self.width()
         if total <= 0:
             return
-        desired = min(max(explorer.sizeHint().width(), explorer.minimumWidth()), int(total * 0.2))
-        detail_width = max(total - desired, int(total * 0.5))
+        desired = max(300, min(explorer.sizeHint().width(), int(total * 0.2)))
+        detail_width = max(total - desired, desired)
         splitter.blockSignals(True)
         splitter.setSizes([desired, detail_width])
         splitter.blockSignals(False)
@@ -932,29 +878,6 @@ class MasterWindow(QMainWindow):
         container_layout = QHBoxLayout(container)
         container_layout.setContentsMargins(6, 6, 6, 6)
         container_layout.setSpacing(6)
-        container.setStyleSheet(
-            """
-            QFrame {
-                border: 1px solid rgba(167, 208, 217, 0.25);
-                border-radius: 8px;
-            }
-            QToolButton, QLabel, QLineEdit {
-                background-color: transparent;
-                border: none;
-                color: #A7D0D9;
-            }
-            QToolButton {
-                border-radius: 4px;
-                padding: 2px;
-            }
-            QToolButton:hover,
-            QToolButton:checked {
-                background-color: transparent;
-                border: none;
-            }
-            """
-        )
-
         drag_handle = self._create_icon_label(
             container,
             f"PlaylistItemDragHandle_{index}",
@@ -1037,7 +960,6 @@ class MasterWindow(QMainWindow):
         fade_in_input.setToolTip(f"PlaylistItemFadeInInput_{index}")
         fade_in_input.setFixedWidth(46)
         fade_in_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        fade_in_input.setStyleSheet("color: palette(window-text);")
         fade_in_input.setPlaceholderText("0.0")
         fade_in_validator = QDoubleValidator(0.0, 9999.0, 1, fade_in_input)
         fade_in_input.setValidator(fade_in_validator)
@@ -1053,7 +975,6 @@ class MasterWindow(QMainWindow):
         fade_out_input.setToolTip(f"PlaylistItemFadeOutInput_{index}")
         fade_out_input.setFixedWidth(46)
         fade_out_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        fade_out_input.setStyleSheet("color: palette(window-text);")
         fade_out_input.setPlaceholderText("0.0")
         fade_out_validator = QDoubleValidator(0.0, 9999.0, 1, fade_out_input)
         fade_out_input.setValidator(fade_out_validator)
@@ -1235,12 +1156,15 @@ class MasterWindow(QMainWindow):
 
         header = QFrame(view)
         header.setObjectName("PlaylistDetailHeader")
+        header.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(8, 8, 8, 8)
         header_layout.setSpacing(8)
         title = QLabel("Playlist-Steuerung", header)
         title.setObjectName("PlaylistDetailTitleLabel")
-        title.setStyleSheet("font-weight: 600;")
+        header_font = QFont(title.font())
+        header_font.setWeight(QFont.Weight.DemiBold)
+        title.setFont(header_font)
         header_layout.addWidget(title)
         header_layout.addStretch(1)
         layout.addWidget(header)
@@ -1254,7 +1178,10 @@ class MasterWindow(QMainWindow):
 
         playlist_title = QLabel("Playlist", playlist_container)
         playlist_title.setObjectName("AudioPlaylistTitleLabel")
-        playlist_title.setStyleSheet("font-size: 14px; font-weight: 600;")
+        playlist_font = QFont(playlist_title.font())
+        playlist_font.setPointSize(max(10, playlist_font.pointSize()))
+        playlist_font.setWeight(QFont.Weight.DemiBold)
+        playlist_title.setFont(playlist_font)
         playlist_layout.addWidget(playlist_title)
 
         playlist_body = QWidget(playlist_container)
@@ -1573,13 +1500,17 @@ class MasterWindow(QMainWindow):
         text_layout.setSpacing(2)
         title = QLabel(slide.title, container)
         title.setObjectName("SlideItemTitle")
-        title.setStyleSheet("font-weight: 600; font-size: 16px;")
+        title_font = QFont(title.font())
+        title_font.setPointSize(max(12, title_font.pointSize()))
+        title_font.setWeight(QFont.Weight.DemiBold)
+        title.setFont(title_font)
         subtitle = QLabel(slide.subtitle, container)
         subtitle.setObjectName("SlideItemSubtitle")
-        subtitle.setStyleSheet("color: palette(window-text);")
         group = QLabel(slide.group, container)
         group.setObjectName("SlideItemGroup")
-        group.setStyleSheet("font-size: 12px; color: palette(dark);")
+        group_font = QFont(group.font())
+        group_font.setPointSize(max(10, group_font.pointSize() - 2))
+        group.setFont(group_font)
         text_layout.addWidget(title)
         text_layout.addWidget(subtitle)
         text_layout.addWidget(group)
