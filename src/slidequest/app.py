@@ -81,6 +81,7 @@ SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         "Layoutübersicht öffnen",
         checkable=True,
         auto_exclusive=True,
+        checked_by_default=True,
     ),
     ButtonSpec(
         "AudioExplorerLauncher",
@@ -353,6 +354,8 @@ class MasterWindow(QMainWindow):
         self._icon_base_color = QColor("#ffffff")
         self._icon_accent_color = QColor("#ffffff")
         self._container_color = QColor("#222222")
+        self._content_splitter: QSplitter | None = None
+        self._detail_last_sizes: list[int] = []
         self._slides = self._load_slides()
         self._setup_placeholder()
 
@@ -403,6 +406,7 @@ class MasterWindow(QMainWindow):
         splitter.setObjectName("contentSplitter")
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(8)
+        self._content_splitter = splitter
 
         explorer_container = QWidget(splitter)
         explorer_container.setObjectName("explorerView")
@@ -572,10 +576,6 @@ class MasterWindow(QMainWindow):
         detail_footer_layout = QVBoxLayout(detail_footer)
         detail_footer_layout.setContentsMargins(12, 8, 12, 12)
         detail_footer_layout.setSpacing(8)
-        footer_label = QLabel("Layout Auswahl", detail_footer)
-        footer_label.setStyleSheet("font-weight: 600; font-size: 14px; color: #dbe3ff;")
-        detail_footer_layout.addWidget(footer_label)
-
         related_scroll = QScrollArea(detail_footer)
         related_scroll.setObjectName("relatedLayoutsScroll")
         related_scroll.setWidgetResizable(True)
@@ -615,6 +615,7 @@ class MasterWindow(QMainWindow):
         central.setLayout(layout)
         self.setCentralWidget(central)
         self._apply_surface_theme()
+        self._wire_symbol_launchers()
 
     def _build_status_bar(self, status_bar: QFrame) -> None:
         layout = QHBoxLayout(status_bar)
@@ -855,6 +856,41 @@ class MasterWindow(QMainWindow):
                 path, self._icon_base_color, QSize(ICON_PIXMAP_SIZE, ICON_PIXMAP_SIZE)
             )
             action.setIcon(tinted)
+
+    def _wire_symbol_launchers(self) -> None:
+        layout_button = self._symbol_button_map.get("LayoutExplorerLauncher")
+        if layout_button is None:
+            return
+        layout_button.toggled.connect(self._handle_layout_explorer_toggled)
+        self._handle_layout_explorer_toggled(layout_button.isChecked())
+
+    def _handle_layout_explorer_toggled(self, checked: bool) -> None:
+        self._set_detail_views_visible(checked)
+
+    def _set_detail_views_visible(self, visible: bool) -> None:
+        detail = self._detail_container
+        splitter = self._content_splitter
+        if detail is None:
+            return
+        if visible:
+            detail.show()
+            if splitter and len(self._detail_last_sizes) >= 2:
+                splitter.setSizes(self._detail_last_sizes)
+            elif splitter:
+                sizes = splitter.sizes()
+                total = sum(sizes) if sizes else self.width()
+                explorer = int(total * 0.25)
+                detail_size = max(total - explorer, 0)
+                splitter.setSizes([explorer, detail_size])
+        else:
+            if splitter:
+                sizes = splitter.sizes()
+                if sizes:
+                    self._detail_last_sizes = sizes
+                    if len(sizes) >= 2:
+                        explorer_total = sizes[0] + sizes[1]
+                        splitter.setSizes([explorer_total, 0])
+            detail.hide()
 
     def _wire_volume_buttons(self, buttons: dict[str, QToolButton]) -> None:
         slider = self._volume_slider
@@ -1274,7 +1310,7 @@ class MasterWindow(QMainWindow):
         title.setStyleSheet("font-weight: 600; font-size: 16px;")
         subtitle = QLabel(slide.subtitle, container)
         subtitle.setObjectName("slideItemSubtitle")
-        subtitle.setStyleSheet("color: palette(mid);")
+        subtitle.setStyleSheet("color: palette(window-text);")
         group = QLabel(slide.group, container)
         group.setObjectName("slideItemGroup")
         group.setStyleSheet("font-size: 12px; color: palette(dark);")

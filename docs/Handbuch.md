@@ -20,11 +20,10 @@
 
 ## UI-Überblick
 
-![MasterWindow Layout](../assets/MasterWindow_GeneralLayout.png)
+![Layout-Ansicht](assets/LayoutViewScreenshot.png)
 
-- `MasterWindow` ist die Steuerebene für Autorenfunktionen.
-- `PresentationWindow` zeigt die Ausgabe; beide Fenster starten gemeinsam über `slidequest.main`.
-- Der obige Screenshot visualisiert StatusBar, SymbolView sowie Explorer-/Detail-Spalten mitsamt Unterbereichen (Header/Main/Footer).
+- `MasterWindow` ist die Steuerebene für Autorenfunktionen, `PresentationWindow` visualisiert die Ausgabe.
+- Der Screenshot zeigt StatusBar, SymbolView, Explorer- und Detailbereich inklusive Header/Main/Footer sowie die Layout-Auswahl.
 
 ## SymbolView (Navigation)
 
@@ -39,13 +38,7 @@ Die SymbolView ist eine vertikale Navigationsleiste. Jeder Button öffnet eine e
 
 > Hinweis: Icons liegen als Bootstrap-SVGs unter `assets/icons/bootstrap/<kategorie>/`. Bei neuen Domains immer dort ablegen und im Handbuch/README erwähnen.
 
-![Steuerzentrale](../assets/MasterWindow_ZentraleSteuerelemente.png)
-
-> Abbildung: Zusammenspiel aus SymbolView (links) und Statusbar (zentral/rechts) inklusive Seekbar, Transport-Buttons und Lautstärke.
-
-![Steuerzentrale mit Explorer](../assets/MasterWinder_ZentraleSteuerelemente_MitExplorer.png)
-
-> Ergänzt um ExplorerHeaderView (Search/Filter) und ExplorerFooterView (CRUD).
+> Abbildung (oben): SymbolView (links), Statusbar (zentral/rechts), ExplorerHeader inkl. Search/Filter sowie ExplorerFooter mit CRUD und Layout-Auswahl im DetailFooter.
 
 ## Explorer Controls
 
@@ -106,7 +99,7 @@ Die verfügbaren Slides wohnen in `data/slides.json`. Jede Folie folgt exakt die
 - `AGENTS.md` – technische Vorgaben für KI-Agenten.
 - `docs/` – Obsidian-Vault mit diesem Handbuch.
 - `tasks.md` – Backlog für mehrschrittige Arbeiten.
-- `assets/` – Referenzmaterial (z. B. MasterWindow_GeneralLayout.png, Icons).
+- `assets/` – Referenzmaterial (z. B. `docs/assets/LayoutViewScreenshot.png`, Icons).
 - `MTMT*` – Legacy-Applikation; bleibt unverändert, außer ausdrücklich gefordert.
 
 ## Kollaboration

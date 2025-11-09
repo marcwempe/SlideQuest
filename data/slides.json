@@ -6,13 +6,94 @@
       "group": "17B",
       "layout": {
         "active_layout": "2S|75:25/1R|100/4R|25:25:25:25",
-        "thumbnail_url": "assets/thumbnails/einspaltig-1.png",
+        "thumbnail_url": "assets/thumbnails/intro-1.png",
         "content": [
           "/Users/marcwempe/Downloads/SceneImage_1.png",
           "/Users/marcwempe/Downloads/SceneImage_7.png",
           "/Users/marcwempe/Downloads/SceneImage_10.png",
           "/Users/marcwempe/Downloads/SceneImage_5.png",
           "/Users/marcwempe/Downloads/SceneImage_4.png"
+        ]
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Das Chemielabor",
+      "subtitle": "Steinwurftheorie",
+      "group": "17B",
+      "layout": {
+        "active_layout": "2S|75:25/1R|100/4R|25:25:25:25",
+        "thumbnail_url": "assets/thumbnails/neue-folie-2.png",
+        "content": [
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_laboratory_scene_a_plain_di_86dbf235-6966-4bc3-b427-b1220fc06d08_0.png",
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_laboratory_detail_a_stack_o_cd3ffb92-9fd9-48d5-bdc5-f6d78581a3e7_2.png",
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_laboratory_detail_close-up__2e73b8b6-d59d-489e-b00a-def357eac1de_2.png",
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_laboratory_detail_close-up__27c99d40-2345-4643-9f8c-85bcb4fe0115_0.png",
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_laboratory_detail_close-up__06586648-b772-4ce0-941a-656a65026ad3_0.png"
+        ]
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Der Minotaurus",
+      "subtitle": "Lauft!",
+      "group": "17B",
+      "layout": {
+        "active_layout": "1S|100/1R|100",
+        "thumbnail_url": "assets/thumbnails/neue-folie-3.png",
+        "content": [
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_dark_interior_scene_close-up_of_a_tower_ae691514-7346-46cf-b1a3-8d51d9d785a8_0.png"
+        ]
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Das Organische Labor",
+      "subtitle": "Zellteilung!",
+      "group": "17B",
+      "layout": {
+        "active_layout": "2S|60:40/1R:100/1R:100",
+        "thumbnail_url": "assets/thumbnails/neue-folie-4.png",
+        "content": [
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_medical_laboratory_sterile__52ec704b-655a-41db-a773-db611aef4712_2.png",
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_underground_medical_laboratory_detail_s_02704d34-d3e2-4d75-93c0-b782d41bd3c6_2.png"
+        ]
+      },
+      "audio": {
+        "playlist": [],
+        "effects": []
+      },
+      "notes": {
+        "notebooks": []
+      }
+    },
+    {
+      "title": "Die Treppe",
+      "subtitle": "Halt dich fest!",
+      "group": "17B",
+      "layout": {
+        "active_layout": "1S|100/1R|100",
+        "thumbnail_url": "assets/thumbnails/neue-folie-5.png",
+        "content": [
+          "/Users/marcwempe/Downloads/marc9148_1923_Germany_interior_scene_a_very_narrow_stairwell__a1c6fdef-c46f-4c2e-b1ab-748b6d83fafa_2.png"
         ]
       },
       "audio": {
