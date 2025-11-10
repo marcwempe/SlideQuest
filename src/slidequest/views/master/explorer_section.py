@@ -78,6 +78,7 @@ class ExplorerSectionMixin:
         self._regenerate_current_slide_thumbnail()
 
     def _handle_create_slide(self) -> None:
+        self._prepare_playlist_for_slide_change()
         layout_id = (
             self._current_slide.layout.active_layout
             if self._current_slide
@@ -95,6 +96,7 @@ class ExplorerSectionMixin:
         current_row = self._slide_list.currentRow()
         if current_row < 0:
             return
+        self._prepare_playlist_for_slide_change()
         self._viewmodel.delete_slide(current_row)
         self._slides = self._viewmodel.slides
         self._populate_slide_list()
@@ -104,6 +106,8 @@ class ExplorerSectionMixin:
 
     def _on_slide_selected(self, item: QListWidgetItem | None) -> None:
         slide = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if slide is not None and slide is not self._current_slide:
+            self._prepare_playlist_for_slide_change()
         if slide and self._slide_list:
             row = self._slide_list.row(item)
             self._viewmodel.select_slide(row)

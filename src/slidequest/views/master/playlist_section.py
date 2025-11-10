@@ -48,6 +48,7 @@ class PlaylistSectionMixin:
         self._playlist_volume_slider: QSlider | None = None
         self._playlist_last_volume_value = 75
         self._playlist_empty_label: QLabel | None = None
+        self._audio_context_reset_pending = False
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -231,6 +232,7 @@ class PlaylistSectionMixin:
             return
         slide = self._current_slide or self._viewmodel.current_slide
         tracks = list(slide.audio.playlist) if slide and slide.audio.playlist else []
+        playing_indices = {idx for idx, button in self._playlist_play_buttons.items() if button.isChecked()}
         placeholder = self._playlist_empty_label
         list_view.blockSignals(True)
         list_view.clear()
@@ -241,6 +243,9 @@ class PlaylistSectionMixin:
         self._playlist_duration_labels.clear()
         self._seek_active.clear()
         self._playlist_track_durations.clear()
+        for idx, track in enumerate(tracks):
+            if idx not in playing_indices:
+                track.position_seconds = 0.0
         if not tracks:
             if placeholder is not None:
                 placeholder.show()
@@ -263,7 +268,9 @@ class PlaylistSectionMixin:
         list_view.blockSignals(False)
         self._refresh_playlist_icon_labels()
         self._update_icon_colors()
-        self._audio_service.set_tracks(tracks)
+        new_context = self._audio_context_reset_pending
+        self._audio_context_reset_pending = False
+        self._audio_service.set_tracks(tracks, new_context=new_context)
 
     def _create_playlist_item_widget(self, track: PlaylistTrack, index: int) -> QWidget:
         container = QFrame()
@@ -535,6 +542,8 @@ class PlaylistSectionMixin:
         if slider is not None:
             slider.setEnabled(playing or bool(self._playlist_track_durations.get(index)))
         self._sync_footer_play_button()
+        if not playing:
+            self._reset_playlist_track_progress(index)
 
     def _handle_audio_position_changed(self, index: int, position: int) -> None:
         if self._seek_active.get(index):
@@ -633,6 +642,26 @@ class PlaylistSectionMixin:
 
     def _any_playlist_track_playing(self) -> bool:
         return any(button.isChecked() for button in self._playlist_play_buttons.values())
+
+    def _prepare_playlist_for_slide_change(self) -> None:
+        if not self._playlist_play_buttons:
+            return
+        active_indices = [idx for idx, button in self._playlist_play_buttons.items() if button.isChecked()]
+        for idx in active_indices:
+            self._toggle_playlist_track_button(idx, False)
+        self._audio_context_reset_pending = True
+
+    def _reset_playlist_track_progress(self, index: int) -> None:
+        slider = self._playlist_seek_sliders.get(index)
+        if slider is not None:
+            slider.blockSignals(True)
+            slider.setValue(0)
+            slider.blockSignals(False)
+        if (label := self._playlist_current_labels.get(index)) is not None:
+            label.setText(self._format_time(0))
+        track = self._get_playlist_track(index)
+        if track is not None:
+            track.position_seconds = 0
 
     def _handle_fade_value_changed(self, index: int, field: QLineEdit, kind: str) -> None:
         text = field.text().strip().replace(",", ".")
