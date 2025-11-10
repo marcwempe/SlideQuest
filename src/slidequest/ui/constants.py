@@ -150,6 +150,18 @@ ACTION_ICONS = {
     "create": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "plus-square.svg",
     "edit": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "pencil-square.svg",
     "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
+    "text_bold": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-bold.svg",
+    "text_italic": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-italic.svg",
+    "text_underline": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-underline.svg",
+    "text_strike": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-strikethrough.svg",
+    "list_bullet": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "list-ul.svg",
+    "list_number": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "list-ol.svg",
+    "quote": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "blockquote-left.svg",
+    "code": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "code.svg",
+    "heading_1": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h1.svg",
+    "heading_2": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h2.svg",
+    "heading_3": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h3.svg",
+    "clear": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-clear.svg",
 }
 
 EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (

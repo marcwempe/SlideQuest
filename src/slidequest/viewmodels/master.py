@@ -158,6 +158,38 @@ class MasterViewModel:
         self.persist()
         self._notify()
 
+    # --- notes --------------------------------------------------------
+    def note_documents(self) -> list[str]:
+        slide = self.current_slide
+        if slide is None:
+            return []
+        return list(slide.notes.notebooks)
+
+    def add_note_documents(self, sources: list[str]) -> list[str]:
+        slide = self.current_slide
+        if slide is None or not sources:
+            return []
+        added: list[str] = []
+        for raw in sources:
+            normalized = normalize_media_path(raw)
+            if not normalized or normalized in slide.notes.notebooks:
+                continue
+            slide.notes.notebooks.append(normalized)
+            added.append(normalized)
+        if added:
+            self.persist()
+            self._notify()
+        return added
+
+    def remove_note_document(self, index: int) -> bool:
+        slide = self.current_slide
+        if slide is None or not (0 <= index < len(slide.notes.notebooks)):
+            return False
+        del slide.notes.notebooks[index]
+        self.persist()
+        self._notify()
+        return True
+
     # --- persistence ---------------------------------------------------
     def persist(self) -> None:
         self._storage.save_slides(self._slides)

@@ -50,6 +50,7 @@ from slidequest.ui.constants import (
 from slidequest.utils.media import normalize_media_path, resolve_media_path, slugify
 from slidequest.viewmodels.master import MasterViewModel
 from slidequest.views.master.explorer_section import ExplorerSectionMixin
+from slidequest.views.master.notes_section import NotesSectionMixin
 from slidequest.views.master.playlist_section import PlaylistSectionMixin
 from slidequest.views.master.theme_section import ThemeAndControlsMixin
 from slidequest.views.presentation_window import PresentationWindow
@@ -66,7 +67,7 @@ STATUS_VOLUME_BUTTONS = {
 }
 
 
-class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionMixin, QMainWindow):
+class MasterWindow(PlaylistSectionMixin, NotesSectionMixin, ThemeAndControlsMixin, ExplorerSectionMixin, QMainWindow):
     """Top-level control surface for SlideQuest."""
 
     def __init__(self) -> None:
@@ -371,6 +372,10 @@ class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionM
         detail_stack.addWidget(playlist_detail)
         self._detail_view_widgets["audio"] = playlist_detail
 
+        notes_detail = self._build_notes_detail_view(detail_stack)
+        detail_stack.addWidget(notes_detail)
+        self._detail_view_widgets["notes"] = notes_detail
+
         splitter.addWidget(explorer_container)
         splitter.addWidget(detail_container)
         splitter.setStretchFactor(0, 0)
@@ -393,6 +398,7 @@ class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionM
     def _on_viewmodel_changed(self) -> None:
         self._slides = self._viewmodel.slides
         self._populate_playlist_tracks()
+        self._populate_note_documents()
 
     def attach_presentation_window(self, window: PresentationWindow) -> None:
         """Register an external presentation window instance."""
@@ -403,9 +409,11 @@ class MasterWindow(PlaylistSectionMixin, ThemeAndControlsMixin, ExplorerSectionM
     def _wire_symbol_launchers(self) -> None:
         layout_button = self._symbol_button_map.get("LayoutExplorerLauncher")
         audio_button = self._symbol_button_map.get("AudioExplorerLauncher")
+        note_button = self._symbol_button_map.get("NoteExplorerLauncher")
         self._detail_mode_buttons = {
             "layout": layout_button,
             "audio": audio_button,
+            "notes": note_button,
         }
         handlers_connected = False
         for mode, button in self._detail_mode_buttons.items():
