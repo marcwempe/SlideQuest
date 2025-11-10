@@ -19,10 +19,12 @@ class AudioService(QObject):
         self._tracks: list[PlaylistTrack] = []
         self._players: dict[int, tuple[QMediaPlayer, QAudioOutput]] = {}
         self._track_durations: dict[int, int] = {}
+        self._track_fade_levels: dict[int, float] = {}
         self._fade_animations: dict[int, QVariantAnimation] = {}
         self._auto_next_triggered: set[int] = set()
         self._manual_stop_fades: set[int] = set()
         self._pending_play: set[int] = set()
+        self._master_volume = 1.0
 
     def set_tracks(self, tracks: list[PlaylistTrack]) -> None:
         was_empty = not self._tracks
@@ -32,6 +34,7 @@ class AudioService(QObject):
             self.stop(idx)
         self._track_durations = {idx: dur for idx, dur in self._track_durations.items() if idx < len(self._tracks)}
         self._fade_animations = {idx: anim for idx, anim in self._fade_animations.items() if idx < len(self._tracks)}
+        self._track_fade_levels = {idx: level for idx, level in self._track_fade_levels.items() if idx < len(self._tracks)}
         self._auto_next_triggered = {idx for idx in self._auto_next_triggered if idx < len(self._tracks)}
         self._manual_stop_fades = {idx for idx in self._manual_stop_fades if idx < len(self._tracks)}
         self._pending_play = {idx for idx in self._pending_play if idx < len(self._tracks)}
@@ -45,14 +48,14 @@ class AudioService(QObject):
         self._stop_fade_animation(index)
         if position_ms is not None:
             slot[0].setPosition(position_ms)
-        slot[1].setVolume(1.0)
         fade_in_ms = int(self._tracks[index].fade_in_seconds * 1000)
         if fade_in_ms > 0:
-            slot[1].setVolume(0.0)
+            self._set_track_fade_level(index, 0.0)
             self._start_fade_animation(index, fade_in_ms, 0.0, 1.0)
         slot[0].play()
         self._pending_play.add(index)
         if fade_in_ms <= 0:
+            self._set_track_fade_level(index, 1.0)
             self._apply_fade_volume(index, slot[0].position())
         self.track_state_changed.emit(index, True)
 
@@ -68,6 +71,7 @@ class AudioService(QObject):
         slot[0].stop()
         slot[0].deleteLater()
         slot[1].deleteLater()
+        self._track_fade_levels.pop(index, None)
         self.track_state_changed.emit(index, False)
         self._auto_next_triggered.discard(index)
         self._manual_stop_fades.discard(index)
@@ -84,8 +88,30 @@ class AudioService(QObject):
             return
         current_volume = slot[1].volume()
         self._manual_stop_fades.add(index)
-        self._start_fade_animation(index, fade_ms, current_volume, 0.0, stop_after=True)
-        
+        current_level = self._track_fade_levels.get(index, current_volume)
+        self._start_fade_animation(index, fade_ms, current_level, 0.0, stop_after=True)
+
+    def set_master_volume(self, value: float) -> None:
+        clamped = max(0.0, min(1.0, value))
+        if clamped == self._master_volume:
+            return
+        self._master_volume = clamped
+        self._apply_master_volume()
+
+    def pause_all(self) -> None:
+        for player, _output in self._players.values():
+            if player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                player.pause()
+
+    def resume_all(self) -> bool:
+        resumed = False
+        for idx, (player, _output) in self._players.items():
+            if player.playbackState() == QMediaPlayer.PlaybackState.PausedState:
+                player.play()
+                self._apply_output_volume(idx)
+                resumed = True
+        return resumed
+
     def seek(self, index: int, position_ms: int) -> None:
         slot = self._players.get(index)
         if slot is None:
@@ -141,7 +167,7 @@ class AudioService(QObject):
         if fade_out > 0 and duration and duration > 0:
             remaining = max(0, duration - position_ms)
             volume = min(volume, min(1.0, remaining / (fade_out * 1000)))
-        slot[1].setVolume(max(0.0, min(1.0, volume)))
+        self._set_track_fade_level(idx, volume)
 
     def _maybe_start_next_track(self, idx: int, position_ms: int) -> None:
         if len(self._tracks) <= 1:
@@ -179,17 +205,13 @@ class AudioService(QObject):
         animation.setDuration(max(0, duration_ms))
         animation.setStartValue(start_volume)
         animation.setEndValue(end_volume)
+        self._set_track_fade_level(index, start_volume)
 
         def update(value: float, idx=index) -> None:
-            slot = self._players.get(idx)
-            if slot is None:
-                return
-            slot[1].setVolume(max(0.0, min(1.0, float(value))))
+            self._set_track_fade_level(idx, float(value))
 
         def finished(idx=index, target=end_volume, stop_flag=stop_after) -> None:
-            slot = self._players.get(idx)
-            if slot is not None:
-                slot[1].setVolume(target)
+            self._set_track_fade_level(idx, target)
             self._fade_animations.pop(idx, None)
             animation.deleteLater()
             if stop_flag:
@@ -199,6 +221,22 @@ class AudioService(QObject):
         animation.finished.connect(finished)
         self._fade_animations[index] = animation
         animation.start()
+
+    def _set_track_fade_level(self, index: int, level: float) -> None:
+        clamped = max(0.0, min(1.0, float(level)))
+        self._track_fade_levels[index] = clamped
+        self._apply_output_volume(index)
+
+    def _apply_output_volume(self, index: int) -> None:
+        slot = self._players.get(index)
+        if slot is None:
+            return
+        level = self._track_fade_levels.get(index, 1.0)
+        slot[1].setVolume(self._master_volume * level)
+
+    def _apply_master_volume(self) -> None:
+        for idx in list(self._players.keys()):
+            self._apply_output_volume(idx)
 
     def _ensure_player(self, index: int, *, preload_only: bool = False) -> tuple[QMediaPlayer, QAudioOutput] | None:
         if not (0 <= index < len(self._tracks)):
@@ -228,6 +266,8 @@ class AudioService(QObject):
             player, _output = slot
             if player.source() != desired_url:
                 player.setSource(desired_url)
+        self._track_fade_levels.setdefault(index, 1.0)
+        self._apply_output_volume(index)
         if preload_only:
             return slot
         return slot

@@ -157,6 +157,7 @@ class PlaylistSectionMixin:
             shell_layout.setContentsMargins(4, 5, 4, 0)
         volume_layout.insertWidget(2, playlist_volume_shell)
         self._wire_playlist_volume_buttons()
+        self._wire_playlist_transport_buttons()
 
         controls_layout.addLayout(transport_layout)
         controls_layout.addStretch(1)
@@ -191,16 +192,38 @@ class PlaylistSectionMixin:
 
             mute.toggled.connect(handle_mute)
 
-        def remember_volume(value: int) -> None:
+        def handle_slider_change(value: int) -> None:
+            self._handle_playlist_volume_changed(value)
             if mute is None or not mute.isChecked():
                 self._playlist_last_volume_value = value
 
-        slider.valueChanged.connect(remember_volume)
+        slider.valueChanged.connect(handle_slider_change)
+        self._handle_playlist_volume_changed(slider.value())
 
         if vol_down := buttons.get("PlaylistVolumeDownButton"):
             vol_down.clicked.connect(lambda: adjust(-5))
         if vol_up := buttons.get("PlaylistVolumeUpButton"):
             vol_up.clicked.connect(lambda: adjust(5))
+
+    def _handle_playlist_volume_changed(self, value: int) -> None:
+        slider = self._playlist_volume_slider
+        if slider is None:
+            return
+        maximum = max(1, slider.maximum())
+        self._audio_service.set_master_volume(value / maximum)
+
+    def _wire_playlist_transport_buttons(self) -> None:
+        buttons = self._playlist_button_map
+        if not buttons:
+            return
+        if prev_button := buttons.get("PlaylistPreviousTrackButton"):
+            prev_button.clicked.connect(lambda: self._handle_playlist_skip(-1))
+        if next_button := buttons.get("PlaylistNextTrackButton"):
+            next_button.clicked.connect(lambda: self._handle_playlist_skip(1))
+        if play_button := buttons.get("PlaylistPlayPauseButton"):
+            play_button.toggled.connect(self._handle_footer_play_toggled)
+        if stop_button := buttons.get("PlaylistStopButton"):
+            stop_button.clicked.connect(self._handle_footer_stop_clicked)
 
     def _populate_playlist_tracks(self) -> None:
         list_view = self._playlist_list
@@ -295,6 +318,7 @@ class PlaylistSectionMixin:
         seek_slider.setFixedHeight(STATUS_ICON_SIZE - 12)
         duration = max(track.duration_seconds, 0.0)
         position = max(min(track.position_seconds, duration), 0.0)
+        self._playlist_track_durations[index] = int(duration * 1000)
         if duration > 0:
             ratio = position / duration if duration else 0.0
             seek_slider.setValue(int(ratio * seek_slider.maximum()))
@@ -307,6 +331,9 @@ class PlaylistSectionMixin:
         container_layout.addWidget(seek_shell, 2)
         seek_slider.sliderPressed.connect(lambda idx=index: self._handle_seek_pressed(idx))
         seek_slider.sliderReleased.connect(lambda idx=index: self._handle_seek_released(idx))
+        seek_slider.sliderMoved.connect(
+            lambda value, idx=index: self._handle_seek_slider_moved(idx, value)
+        )
         self._playlist_seek_sliders[index] = seek_slider
 
         duration_label = QLabel(self._format_time(duration), container)
@@ -423,6 +450,43 @@ class PlaylistSectionMixin:
             self._audio_service.play(index, start_pos)
         else:
             self._audio_service.stop_with_fade(index)
+        self._sync_footer_play_button()
+
+    def _handle_footer_play_toggled(self, checked: bool) -> None:
+        self._ensure_audio_service_tracks()
+        if checked:
+            if self._resume_paused_tracks():
+                return
+            if self._start_first_playlist_track():
+                return
+            self._set_footer_play_button_checked(False)
+            return
+        self._pause_playlist_tracks()
+
+    def _handle_footer_stop_clicked(self) -> None:
+        self._audio_service.stop()
+        self._set_footer_play_button_checked(False)
+
+    def _handle_playlist_skip(self, direction: int) -> None:
+        if direction not in (-1, 1) or not self._playlist_play_buttons:
+            return
+        ordered_indices = sorted(self._playlist_play_buttons.keys())
+        if not ordered_indices:
+            return
+        current_index = self._find_least_progress_track_index()
+        if current_index is None:
+            current_index = ordered_indices[0] if direction > 0 else ordered_indices[-1]
+        try:
+            current_order_pos = ordered_indices.index(current_index)
+        except ValueError:
+            return
+        target_pos = current_order_pos + direction
+        if target_pos < 0 or target_pos >= len(ordered_indices):
+            return
+        target_index = ordered_indices[target_pos]
+        if current_index != target_index:
+            self._toggle_playlist_track_button(current_index, False)
+        self._toggle_playlist_track_button(target_index, True)
 
     def _handle_seek_pressed(self, index: int) -> None:
         self._seek_active[index] = True
@@ -443,6 +507,16 @@ class PlaylistSectionMixin:
         if (label := self._playlist_current_labels.get(index)) is not None:
             label.setText(self._format_time(position / 1000))
 
+    def _handle_seek_slider_moved(self, index: int, value: int) -> None:
+        slider = self._playlist_seek_sliders.get(index)
+        duration = self._playlist_track_durations.get(index)
+        if slider is None or not duration or duration <= 0:
+            return
+        ratio = value / max(1, slider.maximum())
+        preview_seconds = (ratio * duration) / 1000
+        if (label := self._playlist_current_labels.get(index)) is not None:
+            label.setText(self._format_time(preview_seconds))
+
     def _handle_audio_track_state_changed(self, index: int, playing: bool) -> None:
         if playing:
             for idx, other in self._playlist_play_buttons.items():
@@ -460,6 +534,7 @@ class PlaylistSectionMixin:
         slider = self._playlist_seek_sliders.get(index)
         if slider is not None:
             slider.setEnabled(playing or bool(self._playlist_track_durations.get(index)))
+        self._sync_footer_play_button()
 
     def _handle_audio_position_changed(self, index: int, position: int) -> None:
         if self._seek_active.get(index):
@@ -500,6 +575,64 @@ class PlaylistSectionMixin:
         if slide and 0 <= index < len(slide.audio.playlist):
             return slide.audio.playlist[index]
         return None
+
+    def _find_least_progress_track_index(self) -> int | None:
+        candidate_index: int | None = None
+        candidate_ratio: float | None = None
+        for index, button in self._playlist_play_buttons.items():
+            if not button.isChecked():
+                continue
+            ratio = self._compute_track_progress_ratio(index)
+            if candidate_ratio is None or ratio < candidate_ratio:
+                candidate_ratio = ratio
+                candidate_index = index
+        return candidate_index
+
+    def _compute_track_progress_ratio(self, index: int) -> float:
+        slider = self._playlist_seek_sliders.get(index)
+        maximum = slider.maximum() if slider is not None else 0
+        if slider is not None and maximum > 0:
+            return slider.value() / maximum
+        track = self._get_playlist_track(index)
+        if track is not None and track.duration_seconds > 0:
+            return max(0.0, min(1.0, track.position_seconds / track.duration_seconds))
+        return 0.0
+
+    def _toggle_playlist_track_button(self, index: int, play: bool) -> None:
+        button = self._playlist_play_buttons.get(index)
+        if button is None or button.isChecked() == play:
+            return
+        button.click()
+
+    def _start_first_playlist_track(self) -> bool:
+        if not self._playlist_play_buttons:
+            return False
+        ordered_indices = sorted(self._playlist_play_buttons.keys())
+        for index in ordered_indices:
+            if index in self._playlist_play_buttons:
+                self._toggle_playlist_track_button(index, True)
+                return True
+        return False
+
+    def _pause_playlist_tracks(self) -> None:
+        self._audio_service.pause_all()
+
+    def _resume_paused_tracks(self) -> bool:
+        return self._audio_service.resume_all()
+
+    def _sync_footer_play_button(self) -> None:
+        self._set_footer_play_button_checked(self._any_playlist_track_playing())
+
+    def _set_footer_play_button_checked(self, checked: bool) -> None:
+        button = self._playlist_button_map.get("PlaylistPlayPauseButton")
+        if button is None or button.isChecked() == checked:
+            return
+        button.blockSignals(True)
+        button.setChecked(checked)
+        button.blockSignals(False)
+
+    def _any_playlist_track_playing(self) -> bool:
+        return any(button.isChecked() for button in self._playlist_play_buttons.values())
 
     def _handle_fade_value_changed(self, index: int, field: QLineEdit, kind: str) -> None:
         text = field.text().strip().replace(",", ".")
