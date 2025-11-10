@@ -525,13 +525,6 @@ class PlaylistSectionMixin:
             label.setText(self._format_time(preview_seconds))
 
     def _handle_audio_track_state_changed(self, index: int, playing: bool) -> None:
-        if playing:
-            for idx, other in self._playlist_play_buttons.items():
-                if idx == index:
-                    continue
-                other.blockSignals(True)
-                other.setChecked(False)
-                other.blockSignals(False)
         button = self._playlist_play_buttons.get(index)
         if button is None:
             return
