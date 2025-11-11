@@ -111,6 +111,21 @@ STATUS_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark-arrow-up.svg",
         "Projekt exportieren",
     ),
+    ButtonSpec(
+        "ProjectImportButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark-arrow-down.svg",
+        "Projekt importieren",
+    ),
+    ButtonSpec(
+        "ProjectPruneButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
+        "Papierkorb leeren",
+    ),
+    ButtonSpec(
+        "ProjectRevealButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "folder-plus.svg",
+        "Projektordner öffnen",
+    ),
 )
 
 STATUS_VOLUME_BUTTONS: set[str] = set()

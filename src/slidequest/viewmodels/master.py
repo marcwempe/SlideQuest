@@ -11,6 +11,7 @@ from slidequest.models.slide import (
     SlideLayoutPayload,
     SlideNotesPayload,
 )
+from slidequest.services.project_service import ProjectStorageService
 from slidequest.services.storage import SlideStorage
 from slidequest.utils.media import normalize_media_path
 
@@ -18,8 +19,13 @@ from slidequest.utils.media import normalize_media_path
 class MasterViewModel:
     """Coordinates slide data and layout interactions for the views."""
 
-    def __init__(self, storage: SlideStorage) -> None:
+    def __init__(
+        self,
+        storage: SlideStorage,
+        project_service: ProjectStorageService | None = None,
+    ) -> None:
         self._storage = storage
+        self._project_service = project_service or storage.project_service
         self._slides: list[SlideData] = storage.load_slides()
         for slide in self._slides:
             if slide.layout.content:
@@ -85,7 +91,7 @@ class MasterViewModel:
         slide = self.current_slide
         if slide is None or area_id <= 0:
             return {}
-        normalized = normalize_media_path(source)
+        normalized = self._import_layout_media(source)
         order_index = area_id - 1
         while len(slide.layout.content) <= order_index:
             slide.layout.content.append("")
@@ -119,7 +125,7 @@ class MasterViewModel:
             return
         added = False
         for raw in sources:
-            normalized = normalize_media_path(raw)
+            normalized = self._import_audio_media(raw)
             if not normalized:
                 continue
             track = PlaylistTrack(
@@ -171,11 +177,16 @@ class MasterViewModel:
             return []
         added: list[str] = []
         for raw in sources:
-            normalized = normalize_media_path(raw)
-            if not normalized or normalized in slide.notes.notebooks:
+            source = raw[7:] if raw.startswith("file://") else raw
+            candidate = Path(source)
+            if candidate.is_absolute():
+                stored = self._project_service.import_file("notes", source)
+            else:
+                stored = source
+            if not stored or stored in slide.notes.notebooks:
                 continue
-            slide.notes.notebooks.append(normalized)
-            added.append(normalized)
+            slide.notes.notebooks.append(stored)
+            added.append(stored)
         if added:
             self.persist()
             self._notify()
@@ -225,6 +236,18 @@ class MasterViewModel:
         self.persist()
         self._notify()
         return deleted
+
+    def _import_layout_media(self, source: str) -> str:
+        path = Path(source[7:] if source.startswith("file://") else source)
+        if path.is_absolute() and path.exists():
+            return self._project_service.import_file("layouts", str(path))
+        return normalize_media_path(str(path))
+
+    def _import_audio_media(self, source: str) -> str:
+        path = Path(source[7:] if source.startswith("file://") else source)
+        if path.is_absolute() and path.exists():
+            return self._project_service.import_file("audio", str(path))
+        return normalize_media_path(str(path))
 
     # --- utility -------------------------------------------------------
     @staticmethod

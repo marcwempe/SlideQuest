@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from slidequest.services.storage import PROJECT_ROOT
+from slidequest.services.project_service import ProjectStorageService
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def slugify(value: str) -> str:
@@ -19,6 +21,9 @@ def resolve_media_path(path: str) -> str:
     candidate = Path(path)
     if candidate.is_absolute():
         return str(candidate)
+    project_dir = ProjectStorageService.active_project_dir()
+    if project_dir:
+        return str((project_dir / candidate).resolve())
     return str((PROJECT_ROOT / candidate).resolve())
 
 

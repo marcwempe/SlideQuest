@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import tempfile
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextListFormat, QTextFormat
@@ -26,7 +27,7 @@ except Exception:  # pragma: no cover - fallback when QtPdf is missing
 
 from slidequest.services.storage import DATA_DIR
 from slidequest.ui.constants import ACTION_ICONS, DETAIL_FOOTER_HEIGHT, DETAIL_HEADER_HEIGHT
-from slidequest.utils.media import normalize_media_path, resolve_media_path
+from slidequest.utils.media import resolve_media_path
 from slidequest.views.widgets.document_list import DocumentListWidget
 
 
@@ -250,7 +251,7 @@ class NotesSectionMixin:
         renderer = self._note_renderer_stack
         if renderer is None:
             return
-        absolute = Path(resolve_media_path(path))
+        absolute = self._resolve_note_path(path)
         if not absolute.exists():
             self._show_note_error(f"Datei nicht gefunden:\n{absolute}")
             return
@@ -318,16 +319,25 @@ class NotesSectionMixin:
     # Toolbar actions
     # ------------------------------------------------------------------ #
     def _handle_note_new_document(self) -> None:
-        notes_dir = DATA_DIR / "notes"
-        notes_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"note-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
-        target = notes_dir / filename
         template = "# Neue Notiz\n\nText hier einfügen …\n"
-        target.write_text(template, encoding="utf-8")
-        normalized = normalize_media_path(str(target))
-        if normalized:
-            self._viewmodel.add_note_documents([normalized])
-            self._populate_note_documents(select_path=normalized)
+        service = getattr(self, "_project_service", None)
+        if service is None:
+            notes_dir = DATA_DIR / "notes"
+            notes_dir.mkdir(parents=True, exist_ok=True)
+            target = notes_dir / f"note-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+            target.write_text(template, encoding="utf-8")
+            reference = str(target)
+        else:
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".md", encoding="utf-8") as handle:
+                handle.write(template)
+                tmp_path = Path(handle.name)
+            try:
+                reference = service.import_file("notes", str(tmp_path))
+            finally:
+                tmp_path.unlink(missing_ok=True)
+        added = self._viewmodel.add_note_documents([reference])
+        if added:
+            self._populate_note_documents(select_path=added[-1])
 
     def _handle_note_save_requested(self) -> None:
         self._save_current_note_document()
@@ -520,7 +530,7 @@ class NotesSectionMixin:
     def _save_current_note_document(self) -> bool:
         if self._note_current_type != "markdown" or not self._note_current_path or self._note_editor is None:
             return False
-        absolute = Path(resolve_media_path(self._note_current_path))
+        absolute = self._resolve_note_path(self._note_current_path)
         absolute.parent.mkdir(parents=True, exist_ok=True)
         try:
             absolute.write_text(self._note_editor.toMarkdown(), encoding="utf-8")
@@ -535,3 +545,14 @@ class NotesSectionMixin:
         if not self._note_dirty:
             return True
         return self._save_current_note_document()
+
+    def _resolve_note_path(self, reference: str | None) -> Path:
+        if not reference:
+            return Path("")
+        candidate = Path(reference)
+        if candidate.is_absolute():
+            return candidate
+        service = getattr(self, "_project_service", None)
+        if service is not None:
+            return service.resolve_asset_path(reference)
+        return Path(resolve_media_path(reference))

@@ -22,7 +22,8 @@ Weitere Hinweise:
 - `src/slidequest/app.py` - schlanker Einstieg, der Master- und Präsentationsfenster startet.
 - `src/slidequest/models/...` - Layout- und Slide-Daten.
 - `src/slidequest/viewmodels/...` - ViewModels (z. B. `MasterViewModel`).
-- `src/slidequest/services/storage.py` - JSON-Speicherung.
+- `src/slidequest/services/storage.py` - Projektspeicher + JSON-Serialisierung.
+- `src/slidequest/services/project_service.py` - AppData-Ordner, Asset-Import (Hash/UUID) und Papierkorb.
 - `src/slidequest/views/master_window.py` - komplette `MasterWindow`-Logik inkl. Panels.
 - `src/slidequest/views/presentation_window.py` - separates Präsentationsfenster.
 - `src/slidequest/views/widgets/layout_preview.py` - Layout-Canvas + Karten.
@@ -38,21 +39,20 @@ Weitere Hinweise:
 
 - `slidequest/app.py` startet die QApplication, erzeugt `MasterWindow` + `PresentationWindow` und verknüpft beide.
 - `MasterWindow` (`views/master_window.py`) baut die Oberfläche, lagert aber alle Zustandsänderungen an das `MasterViewModel` aus.
-- `MasterViewModel` (`viewmodels/master.py`) nutzt `SlideStorage` (`services/storage.py`), um `data/slides.json` zu laden/speichern, Layout-Inhalte zu synchronisieren und Änderungen zu signalisieren.
+- `MasterViewModel` (`viewmodels/master.py`) nutzt `SlideStorage` plus `ProjectStorageService`. Jede Folie lebt in einem Projektordner unter `~/Library/Application Support/SlideQuest/projects/<id>` (bzw. `%APPDATA%\\SlideQuest\\projects\\<id>`), wo `project.json` Slides, Asset-Hash-Map und Papierkorb verwaltet.
 - `PresentationWindow` zeigt die aktuelle Folie und liefert die Quelle für Thumbnails; es existiert immer genau eine Instanz.
 - Wiederverwendbare Hilfen (z. B. `utils/media.py`, `views/widgets/common.py`) bündeln Slug-/Pfad-Logik sowie FlowLayout/Icon-Buttons.
 
 ## UI-Highlights
 
-- **SymbolView**: Vertikale Navigationsleiste mit Launchern für Layout, Audio, Notes und Files. Aktive Buttons erhalten eine farbige Linksmarkierung.
-- **SymbolView-Status**: Aktuell ist nur der Layout-Launcher wirklich angebunden und blendet Explorer/Detail ein bzw. aus; die übrigen Buttons sind Platzhalter für kommende Subapps.
-- **StatusBar**: Artwork + Titel, Audio-Seekbar (zentriert) und Transport-/Volume-Steuerung auf der rechten Seite. Diese Bedienelemente steuern derzeit ausschließlich die UI (es gibt noch keinen Audio-Stack).
+- **NavigationRail**: Startpunkt für Layout-, Audio-, Notes- und File-Ansichten (derzeit nur Layout aktiv); aktive Buttons behalten die Linksmarkierung.
+- **ProjectStatusBar**: Zeigt Logo + Projektnamen, Projektaktionen (Neu, Öffnen, Import, Export, Ordner öffnen, Papierkorb leeren) sowie den aktuellen Papierkorb-Füllstand.
 - **Explorer/Detail**: ExplorerHeader mit Suche + Filter, ExplorerFooter mit CRUD. DetailMain zeigt die Layout-Vorschau; DetailFooter enthält die horizontale Layout-Auswahl.
 - **PresentationWindow**: Wird über den unteren SymbolView-Button geöffnet; es darf nur eine Instanz gleichzeitig existieren.
 
 ## Datenmodell
 
-Slides liegen in `data/slides.json`. Jede Folie enthält Titel, Untertitel, Gruppe sowie einen `layout`-Block (`active_layout`, `thumbnail_url`, `content`). `content[i]` adressiert den Bereich `#i+1`. Layout-Beschreibungen können explizite IDs mit `#` enthalten (z. B. `25#1`), womit Slots priorisiert oder dauerhaft benannt werden; diese IDs bestimmen dann die Zuordnung der Inhalte. `MasterViewModel` hält `content` und `images` automatisch konsistent und persistiert über `SlideStorage`. Layoutwechsel löschen keine übrigen Bilder; sie werden automatisch wieder sichtbar, sobald ein Layout genügend Plätze bietet. Jede Änderung an Layout oder Dropped Media löst ein erneutes Thumbnail-Rendering (`assets/thumbnails/<slug>.png`) aus.
+Slides liegen pro Projekt in `project.json`. Neben einer `slides`-Liste gibt es ein `files`-Mapping, das alle importierten Dateien (layouts/audio/notes) über Hash/UUID referenziert. `content[i]` adressiert weiterhin den Bereich `#i+1`; Layout-Beschreibungen mit `#` definieren feste Zuordnungen. `MasterViewModel` importiert neue Medien automatisch in den Projektordner, synchronisiert `content`/`images` und rendert Thumbnails nach `projects/<id>/layouts/thumbnails/<slug>.png`. Unbenutzte Dateien wandern in `.trash`, lassen sich über die ProjectStatusBar leeren und werden bei passenden Hashes automatisch wiederhergestellt. Projekte können als `.sq` exportiert/importiert (Zip ohne `.trash`) werden.
 
 ## Lokalisierung & Zugänglichkeit
 

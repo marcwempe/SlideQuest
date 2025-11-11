@@ -19,6 +19,7 @@ PySide6 prototype for building and presenting mixed-media slides. SlideQuest shi
 - `src/slidequest/models/...` - dataclasses for layouts and slides.
 - `src/slidequest/viewmodels/...` - viewmodels (e.g., `MasterViewModel`) that mediate persistence and UI.
 - `src/slidequest/services/storage.py` - JSON persistence helpers.
+- `src/slidequest/services/project_service.py` - project-scoped storage (AppData, asset import/dedupe, trash handling).
 - `src/slidequest/views/master_window.py` - full `MasterWindow` implementation and supporting widgets.
 - `src/slidequest/views/presentation_window.py` - secondary window that mirrors the active layout.
 - `src/slidequest/views/widgets/layout_preview.py` - reusable layout canvas + cards.
@@ -36,52 +37,48 @@ PySide6 prototype for building and presenting mixed-media slides. SlideQuest shi
 
 - `slidequest/app.py` boots a QApplication, instantiates `MasterWindow` + `PresentationWindow`, and wires them together.
 - `MasterWindow` (in `views/master_window.py`) composes the UI, but delegates all persistence/state changes to `MasterViewModel`.
-- `MasterViewModel` (`viewmodels/master.py`) uses `SlideStorage` (`services/storage.py`) to load/save `data/slides.json`, keep `layout.content` aligned with `images`, and emit change notifications.
+- `MasterViewModel` (`viewmodels/master.py`) uses `SlideStorage` together with `ProjectStorageService` (`services/project_service.py`). Each project lives under the OS-specific AppData path (`…/SlideQuest/projects/<id>/project.json`) and stores slides plus a deduplicated `files` map.
 - `PresentationWindow` mirrors the current layout purely for rendering/dropping thumbnails; only one instance exists at a time.
 - Utilities such as `utils/media.py` (slug/path helpers) and `views/widgets/common.py` (FlowLayout/IconToolButton) keep reusable logic out of the windows.
 
 ## Slides & Data Model
 
-Slides live in `data/slides.json` and follow this structure:
+Slides live inside `<AppData>/SlideQuest/projects/<id>/project.json` alongside a deduplicated `files` table:
 
 ```json
 {
+  "id": "demo",
+  "files": {
+    "9c7…": {"kind": "audio", "path": "audio/9c7….mp3", "hash": "…", "size": 123456},
+    "1f4…": {"kind": "layouts", "path": "layouts/1f4….png", "hash": "…", "size": 98765}
+  },
   "slides": [
     {
       "title": "My Slide",
-      "subtitle": "Layout Example",
-      "group": "My Group",
       "layout": {
         "active_layout": "2S|60:40#1:40#2/1R:100/1R:100",
-        "thumbnail_url": "assets/thumbnails/example.png",
-        "content": [
-          "media/image.png",
-          "media/photo.jpg",
-          "media/video.mp4"
-        ]
+        "thumbnail_url": "layouts/thumbnails/example.png",
+        "content": ["layouts/1f4….png", "layouts/8ab….png"]
       },
-      "audio": {
-        "playlist": ["media/music.mp3"],
-        "effects": ["media/effect.ogg"]
-      },
-      "notes": {
-        "notebooks": ["notes/show.md"]
-      }
+      "audio": {"playlist": ["audio/9c7….mp3"], "effects": []},
+      "notes": {"notebooks": ["notes/42c….md"]}
     }
   ]
 }
 ```
 
 - `layout.content[i]` corresponds to area `#i+1` in the active layout description. Layout changes never delete surplus media; unused items reappear when a compatible layout is chosen again.
-- Layout descriptions may assign explicit area IDs via `#`, e.g. `25#1` to mark the first slot as the “primary” area. When such IDs exist, they dictate the order in which `layout.content` is mapped.
-- `MasterViewModel` always keeps `layout.content` and `images` in sync; when the JSON omits `content`, defaults from `LAYOUT_ITEMS` are injected. Persisting runs through `SlideStorage`, which also ensures `assets/thumbnails` exists.
-- Drag & drop in the Detail Preview updates `layout.content`, syncs the Presentation window, and captures a fresh thumbnail stored under `assets/thumbnails/<slug>.png`.
+- Layout descriptions may assign explicit area IDs via `#`. When such IDs exist, they dictate the order in which `layout.content` is mapped.
+- `MasterViewModel` keeps `layout.content`/`images` in sync, imports new media via Hash/UUID, and writes updates straight into the project folder.
+- Drag & drop in the Detail Preview imports media, syncs the Presentation window, and captures thumbnails under `projects/<id>/layouts/thumbnails/<slug>.png`.
+- The project-local `.trash` collects unreferenced assets. The ProjectStatusBar shows its size, lets users prune it, and imports resurrect files from `.trash` when hashes match.
+- Projects can be exported/imported as `.sq` archives (zip ohne `.trash`) via the status bar actions.
 - Layout presets are defined in `src/slidequest/models/layouts.py`; each card in the Detail footer is built from these specs.
 
 ## Status & Navigation Surfaces
 
-- **SymbolView** (left) exposes launchers for Layout, Audio, Notes, Files. Currently only the Layout button is wired (Explorer/Detail panels hide when it’s deselected); the other buttons serve as placeholders until their subapps exist. Active buttons get a left accent.
-- **StatusBar** (top) groups artwork/title placeholders, transport controls (shuffle, previous, play/pause, stop, next, loop), seek bar, and volume cluster (mute, down, slider, up). These controls only update UI state for now (no audio backend).
+- **NavigationRail** (left, formerly SymbolView) switches between Layout-, Audio-, Notes- und File-Subapps. Currently only Layout toggles the Explorer/Detail panes; the other launchers are placeholders for upcoming subapps.
+- **ProjectStatusBar** (top) shows logo + project title, project management actions (New/Open/Import/Export/Reveal/Prune) and a live indicator of how much disk space the project trash consumes.
 - **PresentationWindow** is hidden until explicitly launched via the window button anchored at the bottom of SymbolView. Only one presentation window exists at a time; once it closes, the launcher re-enables.
 
 ## Localization & Accessibility

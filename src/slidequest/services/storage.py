@@ -12,6 +12,7 @@ from slidequest.models.slide import (
     SlideLayoutPayload,
     SlideNotesPayload,
 )
+from slidequest.services.project_service import ProjectStorageService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -20,26 +21,49 @@ THUMBNAIL_DIR = PROJECT_ROOT / "assets" / "thumbnails"
 
 
 class SlideStorage:
-    def __init__(self) -> None:
+    def __init__(self, project_service: ProjectStorageService | None = None) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+        self._project_service = project_service or ProjectStorageService()
 
     def load_slides(self) -> list[SlideData]:
-        if SLIDES_FILE.exists():
-            try:
-                payload = json.loads(SLIDES_FILE.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                payload = {}
-            entries = payload.get("slides") or []
-            slides = [self._slide_from_payload(entry) for entry in entries]
-            if slides:
-                return slides
+        project = self._project_service.load_project()
+        if not project.get("slides"):
+            legacy = self._load_legacy_slides()
+            if legacy:
+                project["slides"] = legacy
+                project.setdefault("files", {})
+                self._project_service.save_project(project)
+        entries = project.get("slides") or []
+        slides: list[SlideData] = []
+        migrated = False
+        for entry in entries:
+            slide = self._slide_from_payload(entry)
+            if self._migrate_slide_assets(slide):
+                migrated = True
+            slides.append(slide)
+        if migrated:
+            project["slides"] = [self._slide_to_payload(slide) for slide in slides]
+            self._project_service.save_project(project)
+        if slides:
+            return slides
         return self._seed_from_layouts()
 
     def save_slides(self, slides: list[SlideData]) -> None:
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {"slides": [self._slide_to_payload(slide) for slide in slides]}
-        SLIDES_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        project = self._project_service.load_project()
+        project["slides"] = [self._slide_to_payload(slide) for slide in slides]
+        files = project.setdefault("files", project.get("files") or {})
+        used_paths = self._collect_asset_paths(slides)
+        for file_id, info in list(files.items()):
+            path = info.get("path") or ""
+            if path not in used_paths:
+                self._project_service.move_to_trash(path)
+                files.pop(file_id, None)
+        self._project_service.save_project(project)
+
+    @property
+    def project_service(self) -> ProjectStorageService:
+        return self._project_service
 
     def _slide_from_payload(self, data: dict[str, Any]) -> SlideData:
         layout_data = data.get("layout") or {}
@@ -128,3 +152,69 @@ class SlideStorage:
             )
             slides.append(slide)
         return slides
+
+    def _load_legacy_slides(self) -> list[dict[str, Any]]:
+        if not SLIDES_FILE.exists():
+            return []
+        try:
+            payload = json.loads(SLIDES_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+        return list(payload.get("slides") or [])
+
+    @staticmethod
+    def _content_to_images(content: list[str]) -> dict[int, str]:
+        images: dict[int, str] = {}
+        for index, entry in enumerate(content):
+            if entry:
+                images[index + 1] = entry
+        return images
+
+    def _migrate_slide_assets(self, slide: SlideData) -> bool:
+        changed = False
+        new_content: list[str] = []
+        for path in slide.layout.content:
+            normalized, migrated = self._ensure_asset_registered("layouts", path)
+            new_content.append(normalized)
+            changed = changed or migrated
+        slide.layout.content = new_content
+        slide.images = self._content_to_images(new_content)
+
+        for track in slide.audio.playlist:
+            normalized, migrated = self._ensure_asset_registered("audio", track.source)
+            if migrated:
+                track.source = normalized
+                changed = True
+
+        new_notes: list[str] = []
+        for path in slide.notes.notebooks:
+            normalized, migrated = self._ensure_asset_registered("notes", path)
+            new_notes.append(normalized)
+            changed = changed or migrated
+        slide.notes.notebooks = new_notes
+        return changed
+
+    def _ensure_asset_registered(self, kind: str, path: str) -> tuple[str, bool]:
+        if not path:
+            return path, False
+        candidate = Path(path)
+        if candidate.is_absolute():
+            try:
+                candidate.relative_to(self._project_service.project_dir)
+                return path, False
+            except ValueError:
+                pass
+            relative = self._project_service.import_file(kind, str(candidate))
+            return relative, True
+        return path, False
+
+    @staticmethod
+    def _collect_asset_paths(slides: list[SlideData]) -> set[str]:
+        used: set[str] = set()
+        for slide in slides:
+            used.update(entry for entry in slide.layout.content if entry)
+            for track in slide.audio.playlist:
+                if track.source:
+                    used.add(track.source)
+            used.update(entry for entry in slide.notes.notebooks if entry)
+        return used

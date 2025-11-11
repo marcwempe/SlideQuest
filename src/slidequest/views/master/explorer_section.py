@@ -171,9 +171,13 @@ class ExplorerSectionMixin:
 
     def _resolve_image_paths(self, images: dict[int, str]) -> dict[int, str]:
         resolved: dict[int, str] = {}
+        project_service = getattr(self, "_project_service", None)
         for area_id, path in images.items():
             if path:
-                resolved[area_id] = resolve_media_path(path)
+                if project_service is not None:
+                    resolved[area_id] = str(project_service.resolve_asset_path(path))
+                else:
+                    resolved[area_id] = resolve_media_path(path)
         return resolved
 
     def _regenerate_current_slide_thumbnail(self) -> None:

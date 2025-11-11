@@ -80,8 +80,15 @@ class ChromeSectionMixin:
             registry=self._status_buttons,
         )
         self._status_button_map = status_button_map
+        self._project_title_label = title
+        trash_label = QLabel("Papierkorb: 0 MB", status_bar)
+        trash_label.setObjectName("ProjectTrashLabel")
+        trash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._trash_label = trash_label
+        self._wire_project_buttons(status_button_map)
 
         layout.addWidget(left_container, 1)
+        layout.addWidget(trash_label)
         layout.addStretch(1)
         layout.addWidget(right_container, 0, Qt.AlignmentFlag.AlignRight)
 
@@ -111,6 +118,21 @@ class ChromeSectionMixin:
         presentation_button.clicked.connect(self._show_presentation_window)
         self._presentation_button = presentation_button
         return symbol_view
+
+    def _wire_project_buttons(self, buttons: dict[str, QToolButton]) -> None:
+        mapping = {
+            "ProjectNewButton": "_handle_project_new_clicked",
+            "ProjectOpenButton": "_handle_project_open_clicked",
+            "ProjectExportButton": "_handle_project_export_clicked",
+            "ProjectImportButton": "_handle_project_import_clicked",
+            "ProjectPruneButton": "_handle_project_prune_clicked",
+            "ProjectRevealButton": "_handle_project_reveal_clicked",
+        }
+        for name, handler_name in mapping.items():
+            button = buttons.get(name)
+            handler = getattr(self, handler_name, None)
+            if button is not None and callable(handler):
+                button.clicked.connect(handler)
 
     # ------------------------------------------------------------------ #
     # Theming

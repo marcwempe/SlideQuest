@@ -1,8 +1,13 @@
 from __future__ import annotations
+
+import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Callable, Iterable
 
-from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal, QEvent, QTimer, QObject
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal, QEvent, QTimer, QObject, QUrl
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -10,26 +15,31 @@ from PySide6.QtGui import (
     QIcon,
     QMouseEvent,
     QPalette,
+    QDesktopServices,
 )
 from PySide6.QtWidgets import (
-    QMainWindow,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
+    QMainWindow,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
+    QSlider,
     QSplitter,
     QStackedWidget,
     QToolButton,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import SlideData
+from slidequest.services.project_service import ProjectStorageService
 from slidequest.services.storage import DATA_DIR, PROJECT_ROOT, THUMBNAIL_DIR, SlideStorage
 from slidequest.services.audio_service import AudioService
 from slidequest.ui.constants import (
@@ -47,7 +57,7 @@ from slidequest.ui.constants import (
     SYMBOL_BUTTON_SPECS,
     ButtonSpec,
 )
-from slidequest.utils.media import normalize_media_path, resolve_media_path, slugify
+from slidequest.utils.media import slugify
 from slidequest.viewmodels.master import MasterViewModel
 from slidequest.views.master.explorer_section import ExplorerSectionMixin
 from slidequest.views.master.notes_section import NotesSectionMixin
@@ -82,6 +92,9 @@ class MasterWindow(
         self.setMinimumSize(960, 600)
         self._project_status_bar: QFrame | None = None
         self._navigation_rail: QFrame | None = None
+        self._project_title_label: QLabel | None = None
+        self._trash_label: QLabel | None = None
+        self._project_title_label: QLabel | None = None
         self._presentation_button: QToolButton | None = None
         self._explorer_container: QWidget | None = None
         self._presentation_window: PresentationWindow | None = None
@@ -106,8 +119,9 @@ class MasterWindow(
         self._icon_bindings: list[IconBinding] = []
         self._playlist_accent_color = self.palette().color(QPalette.ColorRole.Highlight)
         self._audio_service = AudioService()
-        self._storage = SlideStorage()
-        self._viewmodel = MasterViewModel(self._storage)
+        self._project_service = ProjectStorageService()
+        self._storage = SlideStorage(self._project_service)
+        self._viewmodel = MasterViewModel(self._storage, project_service=self._project_service)
         self._viewmodel.add_listener(self._on_viewmodel_changed)
         self._slides: list[SlideData] = self._viewmodel.slides
         self._slide_list: QListWidget | None = None
@@ -122,6 +136,9 @@ class MasterWindow(
         self._content_splitter: QSplitter | None = None
         self._detail_last_sizes: list[int] = []
         self._setup_placeholder()
+        self._update_project_title_label()
+        self._update_trash_label()
+        self._update_project_title_label()
 
     def _apply_surface_theme(self) -> None:  # type: ignore[override]
         super()._apply_surface_theme()
@@ -382,6 +399,7 @@ class MasterWindow(
         self._slides = self._viewmodel.slides
         self._populate_playlist_tracks()
         self._populate_note_documents()
+        self._update_trash_label()
 
     def attach_presentation_window(self, window: PresentationWindow) -> None:
         """Register an external presentation window instance."""
@@ -420,6 +438,144 @@ class MasterWindow(
         service.track_state_changed.connect(self._handle_audio_track_state_changed)
         service.position_changed.connect(self._handle_audio_position_changed)
         service.duration_changed.connect(self._handle_audio_duration_changed)
+
+    # ------------------------------------------------------------------ #
+    # Project actions
+    # ------------------------------------------------------------------ #
+    def _handle_project_new_clicked(self) -> None:
+        name, ok = QInputDialog.getText(self, "Neues Projekt", "Projektname:")
+        if not ok:
+            return
+        slug = slugify(name.strip())
+        if not slug:
+            QMessageBox.warning(self, "Projekt", "Bitte einen gültigen Namen eingeben.")
+            return
+        target = self._project_service.projects_root / slug
+        if target.exists():
+            QMessageBox.warning(self, "Projekt", "Ein Projekt mit diesem Namen existiert bereits.")
+            return
+        target.mkdir(parents=True, exist_ok=True)
+        self._switch_project(slug, self._project_service.base_dir)
+
+    def _handle_project_open_clicked(self) -> None:
+        projects = self._project_service.list_projects()
+        if not projects:
+            QMessageBox.information(self, "Projekt öffnen", "Es wurden keine Projekte gefunden.")
+            return
+        selection, ok = QInputDialog.getItem(
+            self,
+            "Projekt öffnen",
+            "Projekt auswählen:",
+            projects,
+            editable=False,
+        )
+        if not ok or not selection:
+            return
+        self._switch_project(selection, self._project_service.base_dir)
+
+    def _handle_project_export_clicked(self) -> None:
+        project_dir = self._project_service.project_dir
+        project_dir.mkdir(parents=True, exist_ok=True)
+        default_name = f"{self._project_service.project_id}.sq"
+        target_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Projekt exportieren",
+            default_name,
+            "SlideQuest Projekt (*.sq)",
+        )
+        if not target_path:
+            return
+        destination = Path(target_path)
+        if destination.suffix.lower() != ".sq":
+            destination = destination.with_suffix(".sq")
+        workspace = Path(tempfile.mkdtemp())
+        try:
+            export_root = workspace / "project"
+            shutil.copytree(project_dir, export_root)
+            trash = export_root / ".trash"
+            if trash.exists():
+                shutil.rmtree(trash, ignore_errors=True)
+            archive = shutil.make_archive(str(workspace / "export"), "zip", root_dir=export_root)
+            shutil.move(archive, destination)
+        finally:
+            shutil.rmtree(workspace, ignore_errors=True)
+        QMessageBox.information(self, "Projekt exportieren", f"Export gespeichert unter:\n{destination}")
+
+    def _handle_project_import_clicked(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Projekt importieren",
+            "",
+            "SlideQuest Projekt (*.sq)",
+        )
+        if not file_path:
+            return
+        source = Path(file_path)
+        if not source.exists():
+            QMessageBox.warning(self, "Projekt importieren", "Die Datei wurde nicht gefunden.")
+            return
+        temp_dir = tempfile.mkdtemp()
+        temp_path = Path(temp_dir)
+        try:
+            shutil.unpack_archive(str(source), temp_dir)
+            project_json = temp_path / "project.json"
+            if not project_json.exists():
+                QMessageBox.warning(self, "Projekt importieren", "Ungültiges Projektpaket.")
+                return
+            data = json.loads(project_json.read_text(encoding="utf-8"))
+            project_id = data.get("id") or slugify(source.stem)
+            target = self._project_service.projects_root / project_id
+            if target.exists():
+                QMessageBox.warning(self, "Projekt importieren", "Projekt existiert bereits.")
+                return
+            shutil.copytree(temp_path, target)
+            self._switch_project(project_id, self._project_service.base_dir)
+        finally:
+            shutil.rmtree(temp_path, ignore_errors=True)
+
+    def _handle_project_reveal_clicked(self) -> None:
+        directory = self._project_service.project_dir
+        directory.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
+
+    def _handle_project_prune_clicked(self) -> None:
+        trash_dir = self._project_service.project_dir / ".trash"
+        if trash_dir.exists():
+            shutil.rmtree(trash_dir, ignore_errors=True)
+        self._update_trash_label()
+
+    def _update_project_title_label(self) -> None:
+        label = getattr(self, "_project_title_label", None)
+        if label is None:
+            return
+        label.setText(self._project_service.project_id or "SlideQuest")
+
+    def _update_trash_label(self) -> None:
+        label = getattr(self, "_trash_label", None)
+        if label is None:
+            return
+        size_bytes = self._project_service.trash_size()
+        size_mb = size_bytes / (1024 * 1024)
+        label.setText(f"Papierkorb: {size_mb:.1f} MB")
+
+    def _switch_project(self, project_id: str, base_dir: Path | None = None) -> None:
+        base = base_dir or self._project_service.base_dir
+        self._project_service = ProjectStorageService(project_id=project_id, base_dir=base)
+        self._storage = SlideStorage(self._project_service)
+        self._viewmodel = MasterViewModel(self._storage, project_service=self._project_service)
+        self._viewmodel.add_listener(self._on_viewmodel_changed)
+        self._slides = self._viewmodel.slides
+        self._populate_slide_list()
+        self._populate_playlist_tracks()
+        self._populate_note_documents()
+        self._update_project_title_label()
+        self._update_trash_label()
+
+    def _update_project_title_label(self) -> None:
+        label = getattr(self, "_project_title_label", None)
+        if label is None:
+            return
+        label.setText(self._project_service.project_id or "SlideQuest")
 
     def _handle_detail_launcher_toggled(self, mode: str, checked: bool) -> None:
         if checked:
