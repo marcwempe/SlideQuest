@@ -46,10 +46,8 @@ class SlideData:
 
 @dataclass
 class SlideTokenPlacement:
+    placement_id: str = ""
     token_id: str = ""
-    source: str = ""
-    overlay: str = ""
-    mask: str = ""
     position_x: float = 0.5
     position_y: float = 0.5
     scale: float = 1.0

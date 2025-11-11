@@ -185,6 +185,16 @@ class ProjectStorageService:
         project["soundboard"] = entries
         self.save_project(project)
 
+    def token_entries(self) -> list[dict[str, str]]:
+        project = self.load_project()
+        tokens = project.setdefault("tokens", [])
+        return [entry for entry in tokens if isinstance(entry, dict)]
+
+    def set_token_entries(self, entries: list[dict[str, str]]) -> None:
+        project = self.load_project()
+        project["tokens"] = entries
+        self.save_project(project)
+
     def trash_path(self) -> Path:
         path = self.project_dir / ".trash"
         path.mkdir(parents=True, exist_ok=True)

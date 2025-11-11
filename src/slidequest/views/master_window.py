@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QEvent, QTimer, QObject, QUrl
-from PySide6.QtGui import QAction, QIcon, QPalette, QDesktopServices
+from PySide6.QtGui import QAction, QIcon, QPalette, QDesktopServices, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -51,9 +51,10 @@ from slidequest.views.master.explorer_section import ExplorerSectionMixin
 from slidequest.views.master.notes_section import NotesSectionMixin
 from slidequest.views.master.playlist_section import PlaylistSectionMixin
 from slidequest.views.master.chrome_section import ChromeSectionMixin
+from slidequest.views.master.token_bar import TokenBar
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import IconBinding
-from slidequest.views.widgets.layout_preview import LayoutPreviewCanvas, LayoutPreviewCard
+from slidequest.views.widgets.layout_preview import CanvasTokenInstance, LayoutPreviewCanvas, LayoutPreviewCard
 
 
 class MasterWindow(
@@ -119,6 +120,9 @@ class MasterWindow(
         self._related_layout_layout: QHBoxLayout | None = None
         self._related_layout_cards: list[LayoutPreviewCard] = []
         self._current_layout_id: str = ""
+        self._token_bar: TokenBar | None = None
+        self._token_pixmap_cache: dict[tuple[str, str, str, int], QPixmap] = {}
+        self._token_palette_map: dict[str, dict[str, str]] = {}
         self._icon_base_color = self.palette().color(QPalette.ColorRole.Text)
         self._icon_accent_color = self.palette().color(QPalette.ColorRole.Highlight)
         self._container_color = self.palette().color(QPalette.ColorRole.Window)
@@ -291,6 +295,7 @@ class MasterWindow(
         detail_header_layout = QHBoxLayout(detail_header)
         detail_header_layout.setContentsMargins(12, 6, 12, 6)
         detail_header_layout.setSpacing(8)
+        self._build_token_bar(detail_header, detail_header_layout)
 
         detail_header_layout.addStretch(1)
 
@@ -318,14 +323,18 @@ class MasterWindow(
         initial_layout = self._slides[0].layout.active_layout if self._slides else "1S|100/1R|100"
         initial_images = self._slides[0].images.copy() if self._slides else {}
         self._current_layout_id = initial_layout
-        self._detail_preview_canvas = LayoutPreviewCanvas(initial_layout, detail_main, accepts_drop=True)
+        self._detail_preview_canvas = LayoutPreviewCanvas(initial_layout, detail_main, accepts_drop=True, supports_tokens=True)
         self._detail_preview_canvas.setObjectName("DetailPreviewCanvas")
         self._detail_preview_canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._detail_preview_canvas.areaDropped.connect(self._handle_preview_drop)
+        self._detail_preview_canvas.tokenDropped.connect(self._handle_token_canvas_drop)
+        self._detail_preview_canvas.tokenTransformChanged.connect(self._handle_token_transform_changed)
+        self._detail_preview_canvas.tokenDeleteRequested.connect(self._handle_token_delete_requested)
         detail_main_layout.addWidget(self._detail_preview_canvas, 1)
         if initial_images:
             self._detail_preview_canvas.set_area_images(self._resolve_image_paths(initial_images))
         self._sync_preview_with_current_slide()
+        self._refresh_token_overlays()
 
         detail_footer_layout = QVBoxLayout(detail_footer)
         detail_footer_layout.setContentsMargins(12, 8, 12, 12)
@@ -383,18 +392,198 @@ class MasterWindow(
         self._wire_symbol_launchers()
         self._wire_audio_service()
 
+    def _build_token_bar(self, parent: QWidget, layout: QHBoxLayout) -> None:
+        bar = TokenBar(parent)
+        bar.imageDropped.connect(self._handle_token_bar_image_dropped)
+        bar.overlayRequested.connect(self._handle_token_overlay_requested)
+        bar.overlayCleared.connect(self._handle_token_overlay_cleared)
+        layout.addWidget(bar, 1)
+        self._token_bar = bar
+        self._refresh_token_bar()
+
+    def _refresh_token_bar(self) -> None:
+        if self._token_bar is None:
+            return
+        entries = self._viewmodel.token_palette()
+        self._token_palette_map = {entry.get("id", ""): entry for entry in entries if entry.get("id")}
+        self._token_bar.set_tokens(entries, self._token_pixmap_for_size)
+
+    def _refresh_token_overlays(self) -> None:
+        placements = self._viewmodel.token_placements()
+        palette = self._token_palette_map if hasattr(self, "_token_palette_map") else {}
+        if not palette:
+            palette = {entry.get("id", ""): entry for entry in self._viewmodel.token_palette() if entry.get("id")}
+            self._token_palette_map = palette
+        base_instances: list[CanvasTokenInstance] = []
+        for placement in placements:
+            entry = palette.get(placement.token_id)
+            if not entry:
+                continue
+            pixmap = self._token_pixmap_for_size(entry, 256)
+            if pixmap is None:
+                continue
+            base_instances.append(
+                CanvasTokenInstance(
+                    placement_id=placement.placement_id,
+                    token_id=placement.token_id,
+                    pixmap=pixmap,
+                    position_x=placement.position_x,
+                    position_y=placement.position_y,
+                    scale=placement.scale,
+                    rotation_deg=placement.rotation_deg,
+                )
+            )
+        preview_instances = [
+            CanvasTokenInstance(
+                placement_id=inst.placement_id,
+                token_id=inst.token_id,
+                pixmap=inst.pixmap,
+                position_x=inst.position_x,
+                position_y=inst.position_y,
+                scale=inst.scale,
+                rotation_deg=inst.rotation_deg,
+            )
+            for inst in base_instances
+        ]
+        presentation_instances = [
+            CanvasTokenInstance(
+                placement_id=inst.placement_id,
+                token_id=inst.token_id,
+                pixmap=inst.pixmap,
+                position_x=inst.position_x,
+                position_y=inst.position_y,
+                scale=inst.scale,
+                rotation_deg=inst.rotation_deg,
+            )
+            for inst in base_instances
+        ]
+        if self._detail_preview_canvas is not None:
+            self._detail_preview_canvas.set_tokens(preview_instances)
+        if self._presentation_window is not None:
+            self._presentation_window.set_tokens(presentation_instances)
+
+    def _token_pixmap_for_size(self, entry: dict[str, str], size: int) -> QPixmap | None:
+        return self._compose_token_pixmap(entry, size)
+
+    def _compose_token_pixmap(self, entry: dict[str, str], size: int) -> QPixmap | None:
+        source = entry.get("source") or ""
+        if not source:
+            return None
+        overlay = entry.get("overlay") or ""
+        mask = entry.get("mask") or ""
+        key = (source, overlay, mask, size)
+        cached = self._token_pixmap_cache.get(key)
+        if cached is not None and not cached.isNull():
+            return cached
+        base_path = self._project_service.resolve_asset_path(source)
+        image = QImage(str(base_path))
+        if image.isNull():
+            return None
+        image = image.convertToFormat(QImage.Format_ARGB32)
+        if mask:
+            mask_path = self._project_service.resolve_asset_path(mask)
+            mask_image = QImage(str(mask_path))
+            if not mask_image.isNull():
+                mask_scaled = mask_image.convertToFormat(QImage.Format_Alpha8).scaled(
+                    image.size(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                image.setAlphaChannel(mask_scaled)
+        painter = QPainter(image)
+        if overlay:
+            overlay_path = self._project_service.resolve_asset_path(overlay)
+            overlay_image = QImage(str(overlay_path))
+            if not overlay_image.isNull():
+                overlay_scaled = overlay_image.scaled(
+                    image.size(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                painter.drawImage(0, 0, overlay_scaled)
+        painter.end()
+        pixmap = QPixmap.fromImage(image)
+        if size > 0:
+            pixmap = pixmap.scaled(
+                size,
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        self._token_pixmap_cache[key] = pixmap
+        return pixmap
+
+    def _handle_token_bar_image_dropped(self, path: str) -> None:
+        source = path[7:] if path.startswith("file://") else path
+        candidate = Path(source)
+        if not candidate.exists():
+            return
+        self._viewmodel.add_token_palette_entry(source)
+        self._token_pixmap_cache.clear()
+        self._refresh_token_bar()
+
+    def _handle_token_overlay_requested(self, token_id: str) -> None:
+        overlay_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Overlay auswählen",
+            "",
+            "Bilder (*.png *.jpg *.jpeg *.webp *.bmp *.svg *.tiff)",
+        )
+        if not overlay_path:
+            return
+        mask_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Opacity Map auswählen",
+            "",
+            "Bilder (*.png *.jpg *.jpeg *.webp *.bmp *.tiff)",
+        )
+        self._viewmodel.update_token_palette_overlay(token_id, overlay_path, mask_path or "")
+        self._token_pixmap_cache.clear()
+        self._refresh_token_bar()
+        self._refresh_token_overlays()
+
+    def _handle_token_overlay_cleared(self, token_id: str) -> None:
+        if self._viewmodel.update_token_palette_overlay(token_id, "", ""):
+            self._token_pixmap_cache.clear()
+            self._refresh_token_bar()
+            self._refresh_token_overlays()
+
+    def _handle_token_canvas_drop(self, token_id: str, norm_x: float, norm_y: float) -> None:
+        if self._viewmodel.add_token_placement(token_id, position_x=norm_x, position_y=norm_y):
+            self._refresh_token_overlays()
+
+    def _handle_token_transform_changed(self, placement_id: str, norm_x: float, norm_y: float, scale: float) -> None:
+        if self._viewmodel.update_token_placement(
+            placement_id,
+            position_x=norm_x,
+            position_y=norm_y,
+            scale=scale,
+        ):
+            self._refresh_token_overlays()
+
+    def _handle_token_delete_requested(self, placement_id: str) -> None:
+        if self._viewmodel.remove_token_placement(placement_id):
+            self._refresh_token_overlays()
+
     def _on_viewmodel_changed(self) -> None:
         self._slides = self._viewmodel.slides
         self._populate_playlist_tracks()
         self._populate_note_documents()
         self._update_trash_label()
         self._refresh_soundboard_buttons()
+        self._token_pixmap_cache.clear()
+        self._refresh_token_bar()
+        self._refresh_token_overlays()
 
     def attach_presentation_window(self, window: PresentationWindow) -> None:
         """Register an external presentation window instance."""
         self._presentation_window = window
         window.closed.connect(self._on_presentation_closed)
+        window.tokenDropped.connect(self._handle_token_canvas_drop)
+        window.tokenTransformChanged.connect(self._handle_token_transform_changed)
+        window.tokenDeleteRequested.connect(self._handle_token_delete_requested)
         self._sync_preview_with_current_slide()
+        self._refresh_token_overlays()
 
     def _wire_symbol_launchers(self) -> None:
         layout_button = self._symbol_button_map.get("LayoutExplorerLauncher")

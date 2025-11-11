@@ -4,13 +4,16 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QSizePolicy, QVBoxLayout, QWidget
 
 from slidequest.utils.media import resolve_media_path
-from slidequest.views.widgets.layout_preview import LayoutPreviewCanvas
+from slidequest.views.widgets.layout_preview import CanvasTokenInstance, LayoutPreviewCanvas
 
 
 class PresentationWindow(QMainWindow):
     """Secondary window that mirrors the current slide layout."""
 
     closed = Signal()
+    tokenDropped = Signal(str, float, float)
+    tokenTransformChanged = Signal(str, float, float, float)
+    tokenDeleteRequested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -20,9 +23,12 @@ class PresentationWindow(QMainWindow):
         self._source_images: dict[int, str] = {}
         self._resolved_images: dict[int, str] = {}
 
-        self._canvas = LayoutPreviewCanvas(self._current_layout, self)
+        self._canvas = LayoutPreviewCanvas(self._current_layout, self, supports_tokens=True)
         self._canvas.setObjectName("PresentationCanvas")
         self._canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._canvas.tokenDropped.connect(self.tokenDropped)
+        self._canvas.tokenTransformChanged.connect(self.tokenTransformChanged)
+        self._canvas.tokenDeleteRequested.connect(self.tokenDeleteRequested)
 
         container = QWidget(self)
         layout = QVBoxLayout(container)
@@ -43,6 +49,9 @@ class PresentationWindow(QMainWindow):
             if path:
                 self._resolved_images[area_id] = resolve_media_path(path)
         self._canvas.set_area_images(self._resolved_images)
+
+    def set_tokens(self, tokens: list[CanvasTokenInstance] | None) -> None:
+        self._canvas.set_tokens(tokens or [])
 
     @property
     def current_layout(self) -> str:

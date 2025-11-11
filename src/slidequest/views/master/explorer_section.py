@@ -172,6 +172,9 @@ class ExplorerSectionMixin:
             self._set_current_layout(slide.layout.active_layout, slide.images.copy())
         else:
             self._set_current_layout(self._current_layout_id)
+        refresher = getattr(self, "_refresh_token_overlays", None)
+        if callable(refresher):
+            refresher()
 
     def _resolve_image_paths(self, images: dict[int, str]) -> dict[int, str]:
         resolved: dict[int, str] = {}

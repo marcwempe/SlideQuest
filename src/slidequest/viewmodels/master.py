@@ -285,63 +285,100 @@ class MasterViewModel:
         if notify:
             self._notify()
 
-    # --- tokens -------------------------------------------------------
-    def tokens(self, slide: SlideData | None = None) -> list[SlideTokenPlacement]:
+    # --- token palette + placements ----------------------------------
+    def token_palette(self) -> list[dict[str, str]]:
+        return self._project_service.token_entries()
+
+    def add_token_palette_entry(self, source: str, *, title: str | None = None) -> dict[str, str] | None:
+        normalized = self._import_token_asset(source)
+        if not normalized:
+            return None
+        entries = self._project_service.token_entries()
+        token_id = uuid4().hex
+        entry = {
+            "id": token_id,
+            "title": title or Path(source).stem,
+            "source": normalized,
+            "overlay": "",
+            "mask": "",
+        }
+        entries.append(entry)
+        self._project_service.set_token_entries(entries)
+        self._notify()
+        return entry
+
+    def update_token_palette_overlay(self, token_id: str, overlay: str, mask: str = "") -> bool:
+        entries = self._project_service.token_entries()
+        updated = False
+        normalized_overlay = self._import_token_asset(overlay) if overlay else ""
+        normalized_mask = self._import_token_asset(mask) if mask else ""
+        for entry in entries:
+            if entry.get("id") != token_id:
+                continue
+            if entry.get("overlay") == normalized_overlay and entry.get("mask") == normalized_mask:
+                return False
+            entry["overlay"] = normalized_overlay
+            entry["mask"] = normalized_mask
+            updated = True
+            break
+        if not updated:
+            return False
+        self._project_service.set_token_entries(entries)
+        self._notify()
+        return True
+
+    def remove_token_palette_entry(self, token_id: str) -> bool:
+        entries = self._project_service.token_entries()
+        new_entries = [entry for entry in entries if entry.get("id") != token_id]
+        if len(new_entries) == len(entries):
+            return False
+        self._project_service.set_token_entries(new_entries)
+        # Remove placements referencing this token
+        changed = False
+        for slide in self._slides:
+            before = len(slide.tokens)
+            slide.tokens = [placement for placement in slide.tokens if placement.token_id != token_id]
+            if len(slide.tokens) != before:
+                changed = True
+        if changed:
+            self.persist()
+        self._notify()
+        return True
+
+    def token_placements(self, slide: SlideData | None = None) -> list[SlideTokenPlacement]:
         target = slide or self.current_slide
         if target is None:
             return []
         return list(target.tokens)
 
-    def add_token(
+    def add_token_placement(
         self,
-        source: str,
+        token_id: str,
         *,
-        overlay: str = "",
-        mask: str = "",
         position_x: float = 0.5,
         position_y: float = 0.5,
         scale: float = 1.0,
         rotation_deg: float = 0.0,
     ) -> SlideTokenPlacement | None:
         slide = self.current_slide
-        if slide is None:
+        if slide is None or not token_id:
             return None
-        token = SlideTokenPlacement(
-            token_id=uuid4().hex,
-            source=self._import_token_media(source),
-            overlay=self._import_token_media(overlay) if overlay else "",
-            mask=self._import_token_media(mask) if mask else "",
+        placement = SlideTokenPlacement(
+            placement_id=uuid4().hex,
+            token_id=token_id,
             position_x=position_x,
             position_y=position_y,
             scale=scale,
             rotation_deg=rotation_deg,
         )
-        slide.tokens.append(token)
+        slide.tokens.append(placement)
         self.persist()
         self._notify()
-        return token
+        return placement
 
-    def update_token_overlay(self, token_id: str, overlay: str, mask: str = "", *, notify: bool = True) -> bool:
-        slide = self.current_slide
-        if slide is None:
-            return False
-        token = self._find_token(slide, token_id)
-        if token is None:
-            return False
-        normalized_overlay = self._import_token_media(overlay) if overlay else ""
-        normalized_mask = self._import_token_media(mask) if mask else ""
-        if token.overlay == normalized_overlay and token.mask == normalized_mask:
-            return False
-        token.overlay = normalized_overlay
-        token.mask = normalized_mask
-        self.persist()
-        if notify:
-            self._notify()
-        return True
-
-    def update_token_transform(
+    def update_token_placement(
         self,
-        token_id: str,
+        placement_id: str,
         *,
         position_x: float | None = None,
         position_y: float | None = None,
@@ -352,21 +389,21 @@ class MasterViewModel:
         slide = self.current_slide
         if slide is None:
             return False
-        token = self._find_token(slide, token_id)
-        if token is None:
+        placement = self._find_token_placement(slide, placement_id)
+        if placement is None:
             return False
         changed = False
-        if position_x is not None and token.position_x != position_x:
-            token.position_x = position_x
+        if position_x is not None and placement.position_x != position_x:
+            placement.position_x = position_x
             changed = True
-        if position_y is not None and token.position_y != position_y:
-            token.position_y = position_y
+        if position_y is not None and placement.position_y != position_y:
+            placement.position_y = position_y
             changed = True
-        if scale is not None and token.scale != scale:
-            token.scale = scale
+        if scale is not None and placement.scale != scale:
+            placement.scale = scale
             changed = True
-        if rotation_deg is not None and token.rotation_deg != rotation_deg:
-            token.rotation_deg = rotation_deg
+        if rotation_deg is not None and placement.rotation_deg != rotation_deg:
+            placement.rotation_deg = rotation_deg
             changed = True
         if not changed:
             return False
@@ -375,14 +412,14 @@ class MasterViewModel:
             self._notify()
         return True
 
-    def remove_token(self, token_id: str, *, notify: bool = True) -> bool:
+    def remove_token_placement(self, placement_id: str, *, notify: bool = True) -> bool:
         slide = self.current_slide
         if slide is None:
             return False
-        token = self._find_token(slide, token_id)
-        if token is None:
+        placement = self._find_token_placement(slide, placement_id)
+        if placement is None:
             return False
-        slide.tokens.remove(token)
+        slide.tokens.remove(placement)
         self.persist()
         if notify:
             self._notify()
@@ -533,7 +570,7 @@ class MasterViewModel:
             return self._project_service.import_file("audio", str(path))
         return normalize_media_path(str(path))
 
-    def _import_token_media(self, source: str) -> str:
+    def _import_token_asset(self, source: str) -> str:
         if not source:
             return ""
         path = Path(source[7:] if source.startswith("file://") else source)
@@ -542,9 +579,9 @@ class MasterViewModel:
         return normalize_media_path(str(path))
 
     @staticmethod
-    def _find_token(slide: SlideData, token_id: str) -> SlideTokenPlacement | None:
+    def _find_token_placement(slide: SlideData, placement_id: str) -> SlideTokenPlacement | None:
         for token in slide.tokens:
-            if token.token_id == token_id:
+            if token.placement_id == placement_id:
                 return token
         return None
 

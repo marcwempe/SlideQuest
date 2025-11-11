@@ -109,15 +109,14 @@ class SlideStorage:
         for entry in data.get("tokens") or []:
             if not isinstance(entry, dict):
                 continue
-            source = (entry.get("source") or "").strip()
-            if not source:
+            token_id = (entry.get("token_id") or entry.get("token") or entry.get("id") or "").strip()
+            if not token_id:
                 continue
+            placement_id = (entry.get("placement_id") or entry.get("id") or uuid4().hex).strip()
             token_entries.append(
                 SlideTokenPlacement(
-                    token_id=(entry.get("id") or entry.get("token_id") or uuid4().hex),
-                    source=source,
-                    overlay=(entry.get("overlay") or ""),
-                    mask=(entry.get("mask") or entry.get("opacity_map") or ""),
+                    placement_id=placement_id,
+                    token_id=token_id,
                     position_x=_safe_float(entry.get("x") if "x" in entry else entry.get("position_x"), 0.5),
                     position_y=_safe_float(entry.get("y") if "y" in entry else entry.get("position_y"), 0.5),
                     scale=_safe_float(entry.get("scale"), 1.0),
@@ -171,10 +170,8 @@ class SlideStorage:
             },
             "tokens": [
                 {
-                    "id": token.token_id,
-                    "source": token.source,
-                    "overlay": token.overlay,
-                    "mask": token.mask,
+                    "placement_id": token.placement_id or uuid4().hex,
+                    "token_id": token.token_id,
                     "x": token.position_x,
                     "y": token.position_y,
                     "scale": token.scale,
@@ -238,21 +235,6 @@ class SlideStorage:
             changed = changed or migrated
         slide.notes.notebooks = new_notes
 
-        for token in slide.tokens:
-            source, migrated = self._ensure_asset_registered("tokens", token.source)
-            if migrated:
-                token.source = source
-                changed = True
-            if token.overlay:
-                overlay, migrated_overlay = self._ensure_asset_registered("tokens", token.overlay)
-                if migrated_overlay:
-                    token.overlay = overlay
-                    changed = True
-            if token.mask:
-                mask, migrated_mask = self._ensure_asset_registered("tokens", token.mask)
-                if migrated_mask:
-                    token.mask = mask
-                    changed = True
         return changed
 
     def _ensure_asset_registered(self, kind: str, path: str) -> tuple[str, bool]:
@@ -278,13 +260,6 @@ class SlideStorage:
                 if track.source:
                     used.add(track.source)
             used.update(entry for entry in slide.notes.notebooks if entry)
-            for token in slide.tokens:
-                if token.source:
-                    used.add(token.source)
-                if token.overlay:
-                    used.add(token.overlay)
-                if token.mask:
-                    used.add(token.mask)
         return used
 
 
