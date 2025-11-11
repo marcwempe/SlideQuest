@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from slidequest.models.layouts import LAYOUT_ITEMS
 from slidequest.models.slide import (
@@ -11,6 +12,7 @@ from slidequest.models.slide import (
     SlideData,
     SlideLayoutPayload,
     SlideNotesPayload,
+    SlideTokenPlacement,
 )
 from slidequest.services.project_service import ProjectStorageService
 
@@ -95,6 +97,33 @@ class SlideStorage:
                         fade_out_seconds=float(entry.get("fade_out_seconds") or 0.0),
                     )
                 )
+        raw_states = audio_data.get("soundboard_states") or {}
+        soundboard_states: dict[str, int] = {}
+        if isinstance(raw_states, dict):
+            for key, value in raw_states.items():
+                try:
+                    soundboard_states[str(key)] = int(value)
+                except (TypeError, ValueError):
+                    continue
+        token_entries: list[SlideTokenPlacement] = []
+        for entry in data.get("tokens") or []:
+            if not isinstance(entry, dict):
+                continue
+            source = (entry.get("source") or "").strip()
+            if not source:
+                continue
+            token_entries.append(
+                SlideTokenPlacement(
+                    token_id=(entry.get("id") or entry.get("token_id") or uuid4().hex),
+                    source=source,
+                    overlay=(entry.get("overlay") or ""),
+                    mask=(entry.get("mask") or entry.get("opacity_map") or ""),
+                    position_x=_safe_float(entry.get("x") if "x" in entry else entry.get("position_x"), 0.5),
+                    position_y=_safe_float(entry.get("y") if "y" in entry else entry.get("position_y"), 0.5),
+                    scale=_safe_float(entry.get("scale"), 1.0),
+                    rotation_deg=_safe_float(entry.get("rotation") if "rotation" in entry else entry.get("rotation_deg"), 0.0),
+                )
+            )
 
         slide = SlideData(
             title=data.get("title") or "Unbenannte Folie",
@@ -104,10 +133,12 @@ class SlideStorage:
             audio=SlideAudioPayload(
                 playlist=playlist_entries,
                 effects=list(audio_data.get("effects") or []),
+                soundboard_states=soundboard_states,
             ),
             notes=SlideNotesPayload(
                 notebooks=list(notes_data.get("notebooks") or []),
             ),
+            tokens=token_entries,
         )
         return slide
 
@@ -133,10 +164,24 @@ class SlideStorage:
                     for track in slide.audio.playlist
                 ],
                 "effects": list(slide.audio.effects),
+                "soundboard_states": dict(slide.audio.soundboard_states),
             },
             "notes": {
                 "notebooks": list(slide.notes.notebooks),
             },
+            "tokens": [
+                {
+                    "id": token.token_id,
+                    "source": token.source,
+                    "overlay": token.overlay,
+                    "mask": token.mask,
+                    "x": token.position_x,
+                    "y": token.position_y,
+                    "scale": token.scale,
+                    "rotation": token.rotation_deg,
+                }
+                for token in slide.tokens
+            ],
         }
 
     def _seed_from_layouts(self) -> list[SlideData]:
@@ -192,6 +237,22 @@ class SlideStorage:
             new_notes.append(normalized)
             changed = changed or migrated
         slide.notes.notebooks = new_notes
+
+        for token in slide.tokens:
+            source, migrated = self._ensure_asset_registered("tokens", token.source)
+            if migrated:
+                token.source = source
+                changed = True
+            if token.overlay:
+                overlay, migrated_overlay = self._ensure_asset_registered("tokens", token.overlay)
+                if migrated_overlay:
+                    token.overlay = overlay
+                    changed = True
+            if token.mask:
+                mask, migrated_mask = self._ensure_asset_registered("tokens", token.mask)
+                if migrated_mask:
+                    token.mask = mask
+                    changed = True
         return changed
 
     def _ensure_asset_registered(self, kind: str, path: str) -> tuple[str, bool]:
@@ -217,4 +278,18 @@ class SlideStorage:
                 if track.source:
                     used.add(track.source)
             used.update(entry for entry in slide.notes.notebooks if entry)
+            for token in slide.tokens:
+                if token.source:
+                    used.add(token.source)
+                if token.overlay:
+                    used.add(token.overlay)
+                if token.mask:
+                    used.add(token.mask)
         return used
+
+
+def _safe_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default

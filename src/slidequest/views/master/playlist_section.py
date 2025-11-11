@@ -210,7 +210,19 @@ class PlaylistSectionMixin:
                 widget.deleteLater()
         entries = self._viewmodel.soundboard_entries()
         self._soundboard_buttons = []
+        slide_state_keys = set()
+        slide_states = self._viewmodel.soundboard_state_map()
+        normalized_states: dict[str, int] = {}
+        for key, value in slide_states.items():
+            try:
+                normalized_states[key] = int(value)
+            except (TypeError, ValueError):
+                continue
+        self._soundboard_states = normalized_states
+        slide_state_keys = set(normalized_states.keys())
         if not entries:
+            if slide_state_keys:
+                self._viewmodel.prune_soundboard_states(set(), notify=False)
             self._soundboard_states.clear()
             self._soundboard_active_index = None
             self._soundboard_active_key = None
@@ -221,8 +233,10 @@ class PlaylistSectionMixin:
         if placeholder is not None:
             placeholder.hide()
         updated_states: dict[str, int] = {}
+        valid_keys: set[str] = set()
         for index, entry in enumerate(entries):
             key = self._soundboard_key_for_entry(entry, index)
+            valid_keys.add(key)
             state = self._soundboard_states.get(key, 0)
             updated_states[key] = state
             button = _SoundboardButton(index)
@@ -233,6 +247,8 @@ class PlaylistSectionMixin:
             layout.addWidget(button)
             self._soundboard_buttons.append(button)
         layout.addStretch(1)
+        if slide_state_keys - valid_keys:
+            self._viewmodel.prune_soundboard_states(valid_keys, notify=False)
         self._soundboard_states = updated_states
 
     def _handle_soundboard_audio_dropped(self, files: list[str]) -> None:
@@ -302,7 +318,7 @@ class PlaylistSectionMixin:
         state = self._soundboard_states.get(key, 0)
         if state == 2:
             return
-        self._soundboard_states[key] = 0
+        self._persist_soundboard_state(key, 0)
         self._soundboard_active_key = None
         self._soundboard_active_index = None
         self._refresh_soundboard_buttons()
@@ -313,20 +329,23 @@ class PlaylistSectionMixin:
             return
         key = self._soundboard_key_for_entry(entry, index)
         state = self._soundboard_states.get(key, 0)
+        new_state = state
         if state == 0:
             if self._soundboard_active_index is not None:
                 self._reset_soundboard_state(self._soundboard_active_key)
                 self._audio_service.stop_preview()
             if self._start_soundboard_play(index, key, loop=False):
-                self._soundboard_states[key] = 1
+                new_state = 1
         elif state == 1:
             if self._start_soundboard_play(index, key, loop=True):
-                self._soundboard_states[key] = 2
+                new_state = 2
         else:
             self._audio_service.stop_preview()
-            self._soundboard_states[key] = 0
+            new_state = 0
             self._soundboard_active_index = None
             self._soundboard_active_key = None
+        if new_state != state:
+            self._persist_soundboard_state(key, new_state)
         self._refresh_soundboard_buttons()
 
     def _start_soundboard_play(self, index: int, key: str, *, loop: bool) -> bool:
@@ -339,8 +358,8 @@ class PlaylistSectionMixin:
         return True
 
     def _reset_soundboard_state(self, key: str | None) -> None:
-        if key and key in self._soundboard_states:
-            self._soundboard_states[key] = 0
+        if key:
+            self._persist_soundboard_state(key, 0)
 
     def _apply_soundboard_button_style(self, button: "_SoundboardButton", image_path: str, state: int) -> None:
         inner_edge = self._soundboard_image_edge()
@@ -425,6 +444,19 @@ class PlaylistSectionMixin:
     def _soundboard_key_for_entry(self, entry: dict[str, str] | None, index: int) -> str:
         source = (entry or {}).get("source")
         return source or f"soundboard-{index}"
+
+    def _persist_soundboard_state(self, key: str, state: int) -> None:
+        previous = self._soundboard_states.get(key, 0)
+        normalized = max(0, int(state))
+        if normalized <= 0:
+            if previous != 0 or key in self._soundboard_states:
+                self._soundboard_states.pop(key, None)
+                self._viewmodel.set_soundboard_state(key, 0, notify=False)
+            return
+        if previous == normalized:
+            return
+        self._soundboard_states[key] = normalized
+        self._viewmodel.set_soundboard_state(key, normalized, notify=False)
 
     def _soundboard_image_edge(self) -> int:
         return SYMBOL_BUTTON_SIZE

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
+from uuid import uuid4
 
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import (
@@ -10,6 +11,7 @@ from slidequest.models.slide import (
     SlideData,
     SlideLayoutPayload,
     SlideNotesPayload,
+    SlideTokenPlacement,
 )
 from slidequest.services.project_service import ProjectStorageService
 from slidequest.services.storage import SlideStorage
@@ -245,6 +247,147 @@ class MasterViewModel:
             return None
         return entries[index]["source"]
 
+    def soundboard_state_map(self, slide: SlideData | None = None) -> dict[str, int]:
+        target = slide or self.current_slide
+        if target is None:
+            return {}
+        return dict(target.audio.soundboard_states)
+
+    def set_soundboard_state(self, key: str, state: int, *, notify: bool = False) -> None:
+        slide = self.current_slide
+        if slide is None or not key:
+            return
+        normalized = max(0, int(state))
+        changed = False
+        if normalized > 0:
+            if slide.audio.soundboard_states.get(key) != normalized:
+                slide.audio.soundboard_states[key] = normalized
+                changed = True
+        elif key in slide.audio.soundboard_states:
+            slide.audio.soundboard_states.pop(key, None)
+            changed = True
+        if changed:
+            self.persist()
+            if notify:
+                self._notify()
+
+    def prune_soundboard_states(self, valid_keys: set[str], *, notify: bool = False) -> None:
+        slide = self.current_slide
+        if slide is None:
+            return
+        keys = set(slide.audio.soundboard_states.keys())
+        obsolete = keys - set(valid_keys)
+        if not obsolete:
+            return
+        for key in obsolete:
+            slide.audio.soundboard_states.pop(key, None)
+        self.persist()
+        if notify:
+            self._notify()
+
+    # --- tokens -------------------------------------------------------
+    def tokens(self, slide: SlideData | None = None) -> list[SlideTokenPlacement]:
+        target = slide or self.current_slide
+        if target is None:
+            return []
+        return list(target.tokens)
+
+    def add_token(
+        self,
+        source: str,
+        *,
+        overlay: str = "",
+        mask: str = "",
+        position_x: float = 0.5,
+        position_y: float = 0.5,
+        scale: float = 1.0,
+        rotation_deg: float = 0.0,
+    ) -> SlideTokenPlacement | None:
+        slide = self.current_slide
+        if slide is None:
+            return None
+        token = SlideTokenPlacement(
+            token_id=uuid4().hex,
+            source=self._import_token_media(source),
+            overlay=self._import_token_media(overlay) if overlay else "",
+            mask=self._import_token_media(mask) if mask else "",
+            position_x=position_x,
+            position_y=position_y,
+            scale=scale,
+            rotation_deg=rotation_deg,
+        )
+        slide.tokens.append(token)
+        self.persist()
+        self._notify()
+        return token
+
+    def update_token_overlay(self, token_id: str, overlay: str, mask: str = "", *, notify: bool = True) -> bool:
+        slide = self.current_slide
+        if slide is None:
+            return False
+        token = self._find_token(slide, token_id)
+        if token is None:
+            return False
+        normalized_overlay = self._import_token_media(overlay) if overlay else ""
+        normalized_mask = self._import_token_media(mask) if mask else ""
+        if token.overlay == normalized_overlay and token.mask == normalized_mask:
+            return False
+        token.overlay = normalized_overlay
+        token.mask = normalized_mask
+        self.persist()
+        if notify:
+            self._notify()
+        return True
+
+    def update_token_transform(
+        self,
+        token_id: str,
+        *,
+        position_x: float | None = None,
+        position_y: float | None = None,
+        scale: float | None = None,
+        rotation_deg: float | None = None,
+        notify: bool = False,
+    ) -> bool:
+        slide = self.current_slide
+        if slide is None:
+            return False
+        token = self._find_token(slide, token_id)
+        if token is None:
+            return False
+        changed = False
+        if position_x is not None and token.position_x != position_x:
+            token.position_x = position_x
+            changed = True
+        if position_y is not None and token.position_y != position_y:
+            token.position_y = position_y
+            changed = True
+        if scale is not None and token.scale != scale:
+            token.scale = scale
+            changed = True
+        if rotation_deg is not None and token.rotation_deg != rotation_deg:
+            token.rotation_deg = rotation_deg
+            changed = True
+        if not changed:
+            return False
+        self.persist()
+        if notify:
+            self._notify()
+        return True
+
+    def remove_token(self, token_id: str, *, notify: bool = True) -> bool:
+        slide = self.current_slide
+        if slide is None:
+            return False
+        token = self._find_token(slide, token_id)
+        if token is None:
+            return False
+        slide.tokens.remove(token)
+        self.persist()
+        if notify:
+            self._notify()
+        return True
+
     def _derive_note_title(self, reference: str) -> str:
         absolute = self._project_service.resolve_asset_path(reference)
         if absolute.exists():
@@ -389,6 +532,21 @@ class MasterViewModel:
         if path.is_absolute() and path.exists():
             return self._project_service.import_file("audio", str(path))
         return normalize_media_path(str(path))
+
+    def _import_token_media(self, source: str) -> str:
+        if not source:
+            return ""
+        path = Path(source[7:] if source.startswith("file://") else source)
+        if path.is_absolute() and path.exists():
+            return self._project_service.import_file("tokens", str(path))
+        return normalize_media_path(str(path))
+
+    @staticmethod
+    def _find_token(slide: SlideData, token_id: str) -> SlideTokenPlacement | None:
+        for token in slide.tokens:
+            if token.token_id == token_id:
+                return token
+        return None
 
     # --- utility -------------------------------------------------------
     @staticmethod
