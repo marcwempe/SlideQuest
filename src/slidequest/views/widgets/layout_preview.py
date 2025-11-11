@@ -151,6 +151,8 @@ class LayoutPreviewCanvas(QFrame):
 
     def dragEnterEvent(self, event) -> None:  # type: ignore[override]
         if self._supports_tokens and self._has_token_payload(event.mimeData()):
+            if self._highlight_area != -1:
+                self._set_highlight_area(-1)
             event.acceptProposedAction()
             return
         if not self._accepts_drop:
@@ -163,6 +165,8 @@ class LayoutPreviewCanvas(QFrame):
 
     def dragMoveEvent(self, event) -> None:  # type: ignore[override]
         if self._supports_tokens and self._has_token_payload(event.mimeData()):
+            if self._highlight_area != -1:
+                self._set_highlight_area(-1)
             event.acceptProposedAction()
             return
         if not self._accepts_drop:

@@ -123,6 +123,9 @@ class MasterWindow(
         self._token_bar: TokenBar | None = None
         self._token_pixmap_cache: dict[tuple[str, str, str, int], QPixmap] = {}
         self._token_palette_map: dict[str, dict[str, str]] = {}
+        self._token_overlay_dirty = True
+        self._token_signature: tuple[tuple[str, str, float, float, float, float], ...] = tuple()
+        self._suspend_token_overlay_refresh = False
         self._icon_base_color = self.palette().color(QPalette.ColorRole.Text)
         self._icon_accent_color = self.palette().color(QPalette.ColorRole.Highlight)
         self._container_color = self.palette().color(QPalette.ColorRole.Window)
@@ -408,8 +411,23 @@ class MasterWindow(
         self._token_palette_map = {entry.get("id", ""): entry for entry in entries if entry.get("id")}
         self._token_bar.set_tokens(entries, self._token_pixmap_for_size)
 
-    def _refresh_token_overlays(self) -> None:
+    def _refresh_token_overlays(self, *, force: bool = False) -> None:
         placements = self._viewmodel.token_placements()
+        signature = tuple(
+            (
+                placement.placement_id,
+                placement.token_id,
+                round(float(placement.position_x), 6),
+                round(float(placement.position_y), 6),
+                round(float(placement.scale), 6),
+                round(float(placement.rotation_deg), 6),
+            )
+            for placement in placements
+        )
+        if not force and not self._token_overlay_dirty and signature == self._token_signature:
+            return
+        self._token_signature = signature
+        self._token_overlay_dirty = False
         palette = self._token_palette_map if hasattr(self, "_token_palette_map") else {}
         if not palette:
             palette = {entry.get("id", ""): entry for entry in self._viewmodel.token_palette() if entry.get("id")}
@@ -518,11 +536,13 @@ class MasterWindow(
         candidate = Path(source)
         if not candidate.exists():
             return
+        self._suspend_token_overlay_refresh = True
         self._viewmodel.add_token_palette_entry(source)
         self._token_pixmap_cache.clear()
         self._refresh_token_bar()
 
     def _handle_token_overlay_requested(self, token_id: str) -> None:
+        self._token_overlay_dirty = True
         overlay_path, _ = QFileDialog.getOpenFileName(
             self,
             "Overlay auswählen",
@@ -540,15 +560,17 @@ class MasterWindow(
         self._viewmodel.update_token_palette_overlay(token_id, overlay_path, mask_path or "")
         self._token_pixmap_cache.clear()
         self._refresh_token_bar()
-        self._refresh_token_overlays()
+        self._refresh_token_overlays(force=True)
 
     def _handle_token_overlay_cleared(self, token_id: str) -> None:
         if self._viewmodel.update_token_palette_overlay(token_id, "", ""):
             self._token_pixmap_cache.clear()
             self._refresh_token_bar()
-            self._refresh_token_overlays()
+            self._token_overlay_dirty = True
+            self._refresh_token_overlays(force=True)
 
     def _handle_token_canvas_drop(self, token_id: str, norm_x: float, norm_y: float) -> None:
+        self._token_overlay_dirty = True
         if self._viewmodel.add_token_placement(token_id, position_x=norm_x, position_y=norm_y):
             self._refresh_token_overlays()
 
@@ -559,21 +581,29 @@ class MasterWindow(
             position_y=norm_y,
             scale=scale,
         ):
+            self._token_overlay_dirty = True
             self._refresh_token_overlays()
 
     def _handle_token_delete_requested(self, placement_id: str) -> None:
+        self._token_overlay_dirty = True
         if self._viewmodel.remove_token_placement(placement_id):
             self._refresh_token_overlays()
 
     def _on_viewmodel_changed(self) -> None:
         self._slides = self._viewmodel.slides
+        self._current_slide = self._viewmodel.current_slide
+        update_tokens = not self._suspend_token_overlay_refresh
+        self._suspend_token_overlay_refresh = False
+        if update_tokens:
+            self._token_overlay_dirty = True
         self._populate_playlist_tracks()
         self._populate_note_documents()
         self._update_trash_label()
         self._refresh_soundboard_buttons()
         self._token_pixmap_cache.clear()
         self._refresh_token_bar()
-        self._refresh_token_overlays()
+        if update_tokens:
+            self._refresh_token_overlays()
 
     def attach_presentation_window(self, window: PresentationWindow) -> None:
         """Register an external presentation window instance."""
@@ -933,6 +963,8 @@ class MasterWindow(
         self._finalize_recording_session(restart_after=True)
 
     def _handle_slide_selection_completed(self, slide: SlideData | None) -> None:  # type: ignore[override]
+        self._refresh_soundboard_buttons()
+        self._refresh_token_overlays()
         if not self._recording_enabled or slide is None:
             return
         if self._pending_recording_restart or not self._transcription_service.is_recording:

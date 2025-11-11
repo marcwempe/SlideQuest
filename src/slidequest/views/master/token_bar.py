@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
-from PySide6.QtGui import QDrag, QMouseEvent, QPixmap, QMimeData
+from PySide6.QtCore import QPoint, QSize, Qt, Signal, QMimeData
+from PySide6.QtGui import QDrag, QIcon, QMouseEvent, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QToolButton, QWidget
 
 from slidequest.ui.constants import SYMBOL_BUTTON_SIZE
@@ -120,7 +120,7 @@ class _TokenButton(QToolButton):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            self.setIcon(scaled)
+            self.setIcon(QIcon(scaled))
             self._thumbnail = scaled
         else:
             self._thumbnail = pixmap
