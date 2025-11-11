@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidgetItem,
+    QMenu,
     QSlider,
     QToolButton,
     QVBoxLayout,
@@ -243,6 +244,7 @@ class PlaylistSectionMixin:
             button.setToolTip(entry.get("title") or Path(entry.get("source", "")).name or f"Sample {index + 1}")
             button.clicked.connect(lambda _, idx=index: self._handle_soundboard_button_clicked(idx))
             button.imageDropped.connect(self._handle_soundboard_image_dropped)
+            button.removeRequested.connect(self._handle_soundboard_remove_requested)
             self._apply_soundboard_button_style(button, entry.get("image") or "", state)
             layout.addWidget(button)
             self._soundboard_buttons.append(button)
@@ -346,6 +348,15 @@ class PlaylistSectionMixin:
             self._soundboard_active_key = None
         if new_state != state:
             self._persist_soundboard_state(key, new_state)
+        self._refresh_soundboard_buttons()
+
+    def _handle_soundboard_remove_requested(self, index: int) -> None:
+        if self._soundboard_active_index == index:
+            self._audio_service.stop_preview()
+            self._soundboard_active_index = None
+            self._soundboard_active_key = None
+        self._viewmodel.remove_soundboard_entry(index)
+        self._soundboard_states.clear()
         self._refresh_soundboard_buttons()
 
     def _start_soundboard_play(self, index: int, key: str, *, loop: bool) -> bool:
@@ -1038,6 +1049,7 @@ class _SoundboardBar(QFrame):
 
 class _SoundboardButton(QToolButton):
     imageDropped = Signal(int, str)
+    removeRequested = Signal(int)
 
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1068,6 +1080,13 @@ class _SoundboardButton(QToolButton):
             event.acceptProposedAction()
             return
         super().dropEvent(event)
+
+    def contextMenuEvent(self, event) -> None:  # type: ignore[override]
+        menu = QMenu(self)
+        delete_action = menu.addAction("Soundboard-Button löschen")
+        action = menu.exec(event.globalPos())
+        if action == delete_action:
+            self.removeRequested.emit(self._index)
 
     @staticmethod
     def _has_image(mime) -> bool:

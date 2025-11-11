@@ -43,6 +43,7 @@ ACTION_ICONS = {
     "create": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "plus-square.svg",
     "edit": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "pencil-square.svg",
     "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
+    "spinner": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "arrow-repeat.svg",
     "text_bold": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-bold.svg",
     "text_italic": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-italic.svg",
     "text_underline": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-underline.svg",
@@ -143,6 +144,7 @@ STATUS_VOLUME_BUTTONS: set[str] = set()
 
 EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (
     ButtonSpec("ExplorerCreateButton", ACTION_ICONS["create"], "Neuen Eintrag anlegen"),
+    ButtonSpec("ExplorerEditButton", ACTION_ICONS["edit"], "Auswahl bearbeiten"),
     ButtonSpec("ExplorerDeleteButton", ACTION_ICONS["delete"], "Auswahl löschen"),
 )
 

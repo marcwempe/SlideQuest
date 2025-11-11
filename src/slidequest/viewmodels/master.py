@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
+
+from PySide6.QtGui import QImage
 
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import (
@@ -247,6 +250,14 @@ class MasterViewModel:
             return None
         return entries[index]["source"]
 
+    def remove_soundboard_entry(self, index: int) -> None:
+        entries = self.soundboard_entries()
+        if not (0 <= index < len(entries)):
+            return
+        entries.pop(index)
+        self._project_service.set_soundboard_entries(entries)
+        self._notify()
+
     def soundboard_state_map(self, slide: SlideData | None = None) -> dict[str, int]:
         target = slide or self.current_slide
         if target is None:
@@ -290,7 +301,7 @@ class MasterViewModel:
         return self._project_service.token_entries()
 
     def add_token_palette_entry(self, source: str, *, title: str | None = None) -> dict[str, str] | None:
-        normalized = self._import_token_asset(source)
+        normalized = self._import_token_asset(source, square_crop=True)
         if not normalized:
             return None
         entries = self._project_service.token_entries()
@@ -500,6 +511,26 @@ class MasterViewModel:
         self.persist()
         self._notify()
 
+    def reorder_slides(self, order: list[int]) -> None:
+        if not self._slides:
+            return
+        if len(order) != len(self._slides):
+            return
+        if set(order) != set(range(len(self._slides))):
+            return
+        current = self.current_slide
+        reordered = [self._slides[i] for i in order]
+        self._slides = reordered
+        if current is not None:
+            try:
+                self._current_index = self._slides.index(current)
+            except ValueError:
+                self._current_index = -1
+        else:
+            self._current_index = -1
+        self.persist()
+        self._notify()
+
     def attach_note_reference(self, slide_index: int, reference: str) -> bool:
         if not reference:
             return False
@@ -542,8 +573,8 @@ class MasterViewModel:
         if defaults:
             slide.images = defaults.copy()
             slide.layout.content = self._images_to_content(slide.images)
-        self._slides.append(slide)
-        self._current_index = len(self._slides) - 1
+        self._slides.insert(0, slide)
+        self._current_index = 0
         self.persist()
         self._notify()
         return slide
@@ -570,12 +601,20 @@ class MasterViewModel:
             return self._project_service.import_file("audio", str(path))
         return normalize_media_path(str(path))
 
-    def _import_token_asset(self, source: str) -> str:
+    def _import_token_asset(self, source: str, *, square_crop: bool = False) -> str:
         if not source:
             return ""
         path = Path(source[7:] if source.startswith("file://") else source)
         if path.is_absolute() and path.exists():
-            return self._project_service.import_file("tokens", str(path))
+            prepared: Path | None = None
+            try:
+                if square_crop:
+                    prepared = self._prepare_square_token_image(path)
+                target = prepared or path
+                return self._project_service.import_file("tokens", str(target))
+            finally:
+                if prepared is not None:
+                    prepared.unlink(missing_ok=True)
         return normalize_media_path(str(path))
 
     @staticmethod
@@ -584,6 +623,25 @@ class MasterViewModel:
             if token.placement_id == placement_id:
                 return token
         return None
+
+    @staticmethod
+    def _prepare_square_token_image(source: Path) -> Path | None:
+        image = QImage(str(source))
+        if image.isNull():
+            return None
+        width = image.width()
+        height = image.height()
+        if width <= 0 or height <= 0:
+            return None
+        edge = min(width, height)
+        offset_x = max(0, (width - edge) // 2)
+        offset_y = 0
+        cropped = image.copy(offset_x, offset_y, edge, edge)
+        target = Path(tempfile.NamedTemporaryFile(suffix=".png", delete=False).name)
+        if not cropped.save(str(target), "PNG"):
+            target.unlink(missing_ok=True)
+            return None
+        return target
 
     # --- utility -------------------------------------------------------
     @staticmethod

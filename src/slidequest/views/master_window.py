@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
-    QListWidget,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
@@ -55,6 +54,7 @@ from slidequest.views.master.token_bar import TokenBar
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import IconBinding
 from slidequest.views.widgets.layout_preview import CanvasTokenInstance, LayoutPreviewCanvas, LayoutPreviewCard
+from slidequest.views.widgets.slide_list import SlideListWidget
 
 
 class MasterWindow(
@@ -114,8 +114,8 @@ class MasterWindow(
         self._record_button_live = False
         self._active_transcript_note: str | None = None
         self._slides: list[SlideData] = self._viewmodel.slides
-        self._slide_list: QListWidget | None = None
-        self._current_slide: SlideData | None = None
+        self._slide_list: SlideListWidget | None = None
+        self._current_slide: SlideData | None = self._viewmodel.current_slide
         self._detail_preview_canvas: LayoutPreviewCanvas | None = None
         self._related_layout_layout: QHBoxLayout | None = None
         self._related_layout_cards: list[LayoutPreviewCard] = []
@@ -126,6 +126,9 @@ class MasterWindow(
         self._token_overlay_dirty = True
         self._token_signature: tuple[tuple[str, str, float, float, float, float], ...] = tuple()
         self._suspend_token_overlay_refresh = False
+        self._filtered_slides: list[SlideData] | None = None
+        self._search_filter_active = False
+        self._search_filter_text = ""
         self._icon_base_color = self.palette().color(QPalette.ColorRole.Text)
         self._icon_accent_color = self.palette().color(QPalette.ColorRole.Highlight)
         self._container_color = self.palette().color(QPalette.ColorRole.Window)
@@ -198,6 +201,8 @@ class MasterWindow(
         )
         self._line_edit_actions.append((search_action, ACTION_ICONS["search"]))
         self._search_input = search_input
+        search_input.textChanged.connect(self._handle_search_text_changed)
+        search_input.returnPressed.connect(self._handle_search_return_pressed)
 
         filter_button = self._create_icon_button(
             explorer_header,
@@ -208,6 +213,7 @@ class MasterWindow(
         )
         filter_button.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
         self._filter_button = filter_button
+        filter_button.toggled.connect(self._handle_filter_toggled)
 
         explorer_header_layout.addWidget(search_input, 1)
         explorer_header_layout.addWidget(filter_button)
@@ -229,7 +235,7 @@ class MasterWindow(
         explorer_main_layout = QVBoxLayout(explorer_main)
         explorer_main_layout.setContentsMargins(4, 4, 4, 4)
         explorer_main_layout.setSpacing(4)
-        self._slide_list = QListWidget(explorer_main)
+        self._slide_list = SlideListWidget(explorer_main)
         self._slide_list.setObjectName("SlideListView")
         self._slide_list.setFrameShape(QFrame.Shape.NoFrame)
         self._slide_list.viewport().setAutoFillBackground(False)
@@ -251,6 +257,7 @@ class MasterWindow(
         self._slide_list.currentItemChanged.connect(
             lambda current, _prev: self._on_slide_selected(current)
         )
+        self._slide_list.orderChanged.connect(self._handle_slide_order_changed)
         self._populate_slide_list()
 
         explorer_layout.addWidget(explorer_header)
@@ -269,6 +276,8 @@ class MasterWindow(
         )
         if create_button := self._crud_button_map.get("ExplorerCreateButton"):
             create_button.clicked.connect(self._handle_create_slide)
+        if edit_button := self._crud_button_map.get("ExplorerEditButton"):
+            edit_button.clicked.connect(self._handle_edit_slide)
         if delete_button := self._crud_button_map.get("ExplorerDeleteButton"):
             delete_button.clicked.connect(self._handle_delete_slide)
 
@@ -337,7 +346,7 @@ class MasterWindow(
         if initial_images:
             self._detail_preview_canvas.set_area_images(self._resolve_image_paths(initial_images))
         self._sync_preview_with_current_slide()
-        self._refresh_token_overlays()
+        self._refresh_token_overlays(force=True)
 
         detail_footer_layout = QVBoxLayout(detail_footer)
         detail_footer_layout.setContentsMargins(12, 8, 12, 12)
@@ -400,6 +409,7 @@ class MasterWindow(
         bar.imageDropped.connect(self._handle_token_bar_image_dropped)
         bar.overlayRequested.connect(self._handle_token_overlay_requested)
         bar.overlayCleared.connect(self._handle_token_overlay_cleared)
+        bar.tokenDeleted.connect(self._handle_token_palette_delete)
         layout.addWidget(bar, 1)
         self._token_bar = bar
         self._refresh_token_bar()
@@ -569,10 +579,58 @@ class MasterWindow(
             self._token_overlay_dirty = True
             self._refresh_token_overlays(force=True)
 
+    def _handle_token_palette_delete(self, token_id: str) -> None:
+        self._token_overlay_dirty = True
+        if self._viewmodel.remove_token_palette_entry(token_id):
+            self._token_pixmap_cache.clear()
+            self._refresh_token_bar()
+            self._refresh_token_overlays(force=True)
+
     def _handle_token_canvas_drop(self, token_id: str, norm_x: float, norm_y: float) -> None:
         self._token_overlay_dirty = True
         if self._viewmodel.add_token_placement(token_id, position_x=norm_x, position_y=norm_y):
             self._refresh_token_overlays()
+
+    def _handle_filter_toggled(self, checked: bool) -> None:
+        self._search_filter_active = checked
+        if not checked:
+            self._filtered_slides = None
+            self._search_filter_text = ""
+            if self._search_input is not None:
+                self._search_input.blockSignals(True)
+                self._search_input.clear()
+                self._search_input.blockSignals(False)
+            self._populate_slide_list(preserve_selection=True)
+            return
+        self._apply_slide_search_filter(self._search_filter_text, preserve_selection=True)
+
+    def _handle_search_text_changed(self, text: str) -> None:
+        self._search_filter_text = text
+        if not self._search_filter_active:
+            return
+        self._apply_slide_search_filter(text, preserve_selection=True)
+
+    def _handle_search_return_pressed(self) -> None:
+        if self._search_filter_active:
+            return
+        if not self._search_filter_text.strip():
+            return
+        if self._filter_button is not None:
+            self._filter_button.blockSignals(True)
+            self._filter_button.setChecked(True)
+            self._filter_button.blockSignals(False)
+        self._handle_filter_toggled(True)
+
+    def _apply_slide_search_filter(self, text: str, *, preserve_selection: bool = False) -> None:
+        query = text.strip()
+        if not self._search_filter_active or not query:
+            self._filtered_slides = None
+        else:
+            normalized = query.lower()
+            self._filtered_slides = [
+                slide for slide in self._slides if self._slide_matches_query(slide, normalized)
+            ]
+        self._populate_slide_list(preserve_selection=preserve_selection)
 
     def _handle_token_transform_changed(self, placement_id: str, norm_x: float, norm_y: float, scale: float) -> None:
         if self._viewmodel.update_token_placement(
@@ -747,6 +805,28 @@ class MasterWindow(
         directory.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
 
+    def _handle_project_delete_requested(self) -> None:
+        project_id = self._project_service.project_id
+        confirmation = QMessageBox.question(
+            self,
+            "Projekt löschen",
+            f"Soll das Projekt '{project_id}' vollständig gelöscht werden?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirmation != QMessageBox.StandardButton.Yes:
+            return
+        project_dir = self._project_service.project_dir
+        try:
+            if project_dir.exists():
+                shutil.rmtree(project_dir)
+        except OSError as exc:
+            QMessageBox.warning(self, "Projekt löschen", f"Projekt konnte nicht gelöscht werden:\n{exc}")
+            return
+        remaining = [entry for entry in self._project_service.list_projects() if entry != project_id]
+        fallback = remaining[0] if remaining else "default"
+        self._switch_project(fallback, self._project_service.base_dir)
+
     def _handle_project_prune_clicked(self) -> None:
         trash_dir = self._project_service.project_dir / ".trash"
         if trash_dir.exists():
@@ -795,9 +875,28 @@ class MasterWindow(
         self._viewmodel = MasterViewModel(self._storage, project_service=self._project_service)
         self._viewmodel.add_listener(self._on_viewmodel_changed)
         self._slides = self._viewmodel.slides
+        self._current_slide = self._viewmodel.current_slide
+        self._filtered_slides = None
+        self._search_filter_text = ""
+        if self._filter_button is not None:
+            self._filter_button.blockSignals(True)
+            self._filter_button.setChecked(False)
+            self._filter_button.blockSignals(False)
+        if self._search_input is not None:
+            self._search_input.blockSignals(True)
+            self._search_input.clear()
+            self._search_input.blockSignals(False)
+        self._token_overlay_dirty = True
+        self._token_pixmap_cache.clear()
+        self._soundboard_states.clear()
+        self._soundboard_active_index = None
+        self._soundboard_active_key = None
         self._populate_slide_list()
         self._populate_playlist_tracks()
         self._populate_note_documents()
+        self._refresh_soundboard_buttons()
+        self._refresh_token_bar()
+        self._refresh_token_overlays(force=True)
         self._update_project_title_label()
         self._update_trash_label()
 

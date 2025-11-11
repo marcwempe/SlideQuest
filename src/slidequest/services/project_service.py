@@ -33,9 +33,13 @@ class ProjectStorageService:
 
     def __init__(self, project_id: str | None = None, base_dir: Path | None = None) -> None:
         self._base_dir = Path(base_dir) if base_dir else _default_appdata_dir() / "SlideQuest"
-        self._project_id = project_id or "default"
+        self._base_dir.mkdir(parents=True, exist_ok=True)
+        remembered = self._load_last_project_id()
+        resolved_id = project_id or remembered or "default"
+        self._project_id = resolved_id
         self._project_payload: dict[str, Any] | None = None
         ProjectStorageService._active_project_dir = self.project_dir
+        self._save_last_project_id(self._project_id)
 
     # ------------------------------------------------------------------ #
     # Paths
@@ -76,6 +80,26 @@ class ProjectStorageService:
             return []
         return sorted(entry.name for entry in root.iterdir() if entry.is_dir())
 
+    def _last_project_file(self) -> Path:
+        return self._base_dir / ".last_project"
+
+    def _load_last_project_id(self) -> str | None:
+        path = self._last_project_file()
+        if not path.exists():
+            return None
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+            return value or None
+        except OSError:
+            return None
+
+    def _save_last_project_id(self, project_id: str) -> None:
+        path = self._last_project_file()
+        try:
+            path.write_text(project_id, encoding="utf-8")
+        except OSError:
+            pass
+
     # ------------------------------------------------------------------ #
     # Project payload
     # ------------------------------------------------------------------ #
@@ -106,6 +130,7 @@ class ProjectStorageService:
             "meta": {},
             "files": {},
             "slides": [],
+            "notes": [],
         }
 
     # ------------------------------------------------------------------ #

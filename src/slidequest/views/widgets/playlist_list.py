@@ -58,6 +58,7 @@ class PlaylistListWidget(QListWidget):
             if target_row < 0:
                 target_row = self.count()
             self._preview_drag_move(target_row)
+            self._autoscroll(event.position().toPoint())
             event.accept()
             return
         super().dragMoveEvent(event)
@@ -136,3 +137,12 @@ class PlaylistListWidget(QListWidget):
             self.setItemWidget(take, widget)
         self._drag_active_row = target_row
         self.setCurrentRow(target_row)
+
+    def _autoscroll(self, point) -> None:
+        margin = 24
+        viewport = self.viewport()
+        y = point.y()
+        if y < margin:
+            viewport.scroll(0, -self.fontMetrics().height())
+        elif y > viewport.height() - margin:
+            viewport.scroll(0, self.fontMetrics().height())

@@ -4,9 +4,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -78,16 +82,36 @@ class ExplorerSectionMixin:
         self._regenerate_current_slide_thumbnail()
 
     def _handle_create_slide(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Neue Folie")
+        form = QFormLayout(dialog)
+        title_input = QLineEdit(dialog)
+        subtitle_input = QLineEdit(dialog)
+        group_input = QLineEdit(dialog)
+        form.addRow("Titel", title_input)
+        form.addRow("Untertitel", subtitle_input)
+        form.addRow("Gruppe", group_input)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        title = title_input.text().strip() or "Neue Folie"
+        subtitle = subtitle_input.text().strip()
+        group = group_input.text().strip() or "All"
         self._prepare_playlist_for_slide_change()
         layout_id = (
             self._current_slide.layout.active_layout
             if self._current_slide
             else (self._slides[0].layout.active_layout if self._slides else "1S|100/1R|100")
         )
-        slide = self._viewmodel.create_slide(layout_id)
+        slide = self._viewmodel.create_slide(layout_id, group=group)
+        slide.title = title
+        slide.subtitle = subtitle
         self._slides = self._viewmodel.slides
         self._current_slide = slide
-        self._populate_slide_list()
+        self._populate_slide_list(preserve_selection=True)
         self._sync_preview_with_current_slide()
 
     def _handle_delete_slide(self) -> None:
@@ -104,7 +128,39 @@ class ExplorerSectionMixin:
             current_row = self._slide_list.count() - 1
         self._slide_list.setCurrentRow(max(0, current_row))
 
+    def _handle_edit_slide(self) -> None:
+        slide = self._current_slide
+        if slide is None:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Folie bearbeiten")
+        form = QFormLayout(dialog)
+        title_input = QLineEdit(dialog)
+        title_input.setText(slide.title)
+        subtitle_input = QLineEdit(dialog)
+        subtitle_input.setText(slide.subtitle)
+        group_input = QLineEdit(dialog)
+        group_input.setText(slide.group)
+        form.addRow("Titel", title_input)
+        form.addRow("Untertitel", subtitle_input)
+        form.addRow("Gruppe", group_input)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        title = title_input.text().strip() or slide.title or "Neue Folie"
+        subtitle = subtitle_input.text().strip()
+        group = group_input.text().strip() or slide.group or "All"
+        self._viewmodel.update_metadata(title, subtitle, group)
+        self._populate_slide_list(preserve_selection=True)
+
     def _on_slide_selected(self, item: QListWidgetItem | None) -> None:
+        if self._slide_list is not None:
+            drag_row = getattr(self._slide_list, "_drag_active_row", None)
+            if drag_row is not None:
+                return
         slide = item.data(Qt.ItemDataRole.UserRole) if item else None
         if slide is not None and slide is not self._current_slide:
             self._prepare_playlist_for_slide_change()
@@ -127,6 +183,24 @@ class ExplorerSectionMixin:
 
     def _handle_slide_selection_completed(self, _slide: SlideData | None) -> None:
         return
+
+    def _handle_slide_order_changed(self) -> None:
+        list_view = self._slide_list
+        if list_view is None or not self._slides:
+            return
+        order: list[int] = []
+        for row in range(list_view.count()):
+            item = list_view.item(row)
+            slide = item.data(Qt.ItemDataRole.UserRole)
+            if slide in self._slides:
+                order.append(self._slides.index(slide))
+        if len(order) != len(self._slides):
+            return
+        self._viewmodel.reorder_slides(order)
+        self._slides = self._viewmodel.slides
+        self._current_slide = self._viewmodel.current_slide
+        self._populate_slide_list(preserve_selection=True)
+        self._sync_preview_with_current_slide()
 
     def _refresh_slide_widget(self, slide: SlideData) -> None:
         if not self._slide_list:
@@ -197,10 +271,12 @@ class ExplorerSectionMixin:
         self._refresh_slide_widget(slide)
 
     def _capture_presentation_thumbnail_path(self, slide: SlideData) -> bool:
+        widget = None
         window = self._presentation_window
-        if window is None:
-            return False
-        widget = window.centralWidget()
+        if window is not None and window.centralWidget() is not None:
+            widget = window.centralWidget()
+        if (widget is None or widget.size().isEmpty()) and self._detail_preview_canvas is not None:
+            widget = self._detail_preview_canvas
         if widget is None or widget.size().isEmpty():
             return False
         app = QApplication.instance()
@@ -230,19 +306,35 @@ class ExplorerSectionMixin:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 
-    def _populate_slide_list(self) -> None:
+    def _populate_slide_list(self, *, preserve_selection: bool = False) -> None:
         if self._slide_list is None:
             return
+        slides = getattr(self, "_filtered_slides", None)
+        slide_source = slides if slides is not None else self._slides
+        previous_slide = self._current_slide if preserve_selection else None
+        previous_block = self._slide_list.blockSignals(True)
         self._slide_list.clear()
-        for slide in self._slides:
+        for slide in slide_source:
             widget = self._create_slide_list_widget(slide)
             list_item = QListWidgetItem()
             list_item.setSizeHint(widget.sizeHint())
             list_item.setData(Qt.ItemDataRole.UserRole, slide)
             self._slide_list.addItem(list_item)
             self._slide_list.setItemWidget(list_item, widget)
-        if self._slide_list.count():
-            self._slide_list.setCurrentRow(0)
+        selection_target = None
+        if previous_slide and previous_slide in slide_source:
+            selection_target = previous_slide
+        elif slide_source:
+            selection_target = slide_source[0]
+        self._slide_list.blockSignals(previous_block)
+        if selection_target is not None and self._slide_list.count():
+            for row in range(self._slide_list.count()):
+                item = self._slide_list.item(row)
+                if item.data(Qt.ItemDataRole.UserRole) is selection_target:
+                    self._slide_list.setCurrentRow(row)
+                    break
+        else:
+            self._slide_list.setCurrentRow(-1)
         self._refresh_slide_item_styles()
         self._update_slide_item_states()
 
@@ -305,6 +397,21 @@ class ExplorerSectionMixin:
         painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "Preview")
         painter.end()
         return pix
+
+    def _slide_matches_query(self, slide: SlideData, query: str) -> bool:
+        query = query.lower()
+        candidates = [slide.title or "", slide.subtitle or "", slide.group or ""]
+        for text in candidates:
+            if text and self._fuzzy_match(text.lower(), query):
+                return True
+        return False
+
+    @staticmethod
+    def _fuzzy_match(text: str, pattern: str) -> bool:
+        if not pattern:
+            return True
+        it = iter(text)
+        return all(char in it for char in pattern)
 
     def _refresh_slide_item_styles(self) -> None:
         if not self._slide_list:

@@ -17,6 +17,7 @@ class TokenBar(QFrame):
     imageDropped = Signal(str)
     overlayRequested = Signal(str)
     overlayCleared = Signal(str)
+    tokenDeleted = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -39,6 +40,7 @@ class TokenBar(QFrame):
         entries: list[dict[str, str]] | None,
         pixmap_provider: Callable[[dict[str, str], int], QPixmap | None] | None,
     ) -> None:
+        entries = [entry for entry in entries or [] if entry.get("source")]
         self._pixmap_provider = pixmap_provider
         for button in self._buttons:
             button.deleteLater()
@@ -50,9 +52,11 @@ class TokenBar(QFrame):
                 widget.setParent(None)
         self._placeholder.setParent(self)
         if not entries:
+            self._placeholder.show()
             self._layout.addWidget(self._placeholder)
             self._layout.addStretch(1)
             return
+        self._placeholder.hide()
         for entry in entries:
             token_id = entry.get("id") or ""
             if not token_id:
@@ -61,6 +65,7 @@ class TokenBar(QFrame):
             button = _TokenButton(token_id, pixmap, self)
             button.overlayRequested.connect(self.overlayRequested)
             button.overlayCleared.connect(self.overlayCleared)
+            button.deleteRequested.connect(self.tokenDeleted)
             self._layout.addWidget(button)
             self._buttons.append(button)
         self._layout.addStretch(1)
@@ -104,6 +109,7 @@ class TokenBar(QFrame):
 class _TokenButton(QToolButton):
     overlayRequested = Signal(str)
     overlayCleared = Signal(str)
+    deleteRequested = Signal(str)
 
     def __init__(self, token_id: str, pixmap: QPixmap | None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -113,6 +119,27 @@ class _TokenButton(QToolButton):
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.setStyleSheet(
+            """
+            QToolButton {
+                min-width: %(size)dpx;
+                min-height: %(size)dpx;
+                max-width: %(size)dpx;
+                max-height: %(size)dpx;
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 10px;
+                padding: 1px;
+                background-color: rgba(0, 0, 0, 0.40);
+            }
+            QToolButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+            }
+            QToolButton:pressed {
+                background-color: rgba(255, 255, 255, 0.16);
+            }
+            """
+            % {"size": SYMBOL_BUTTON_SIZE}
+        )
         if pixmap and not pixmap.isNull():
             scaled = pixmap.scaled(
                 SYMBOL_BUTTON_SIZE - 6,
@@ -154,8 +181,12 @@ class _TokenButton(QToolButton):
         menu = QMenu(self)
         choose_action = menu.addAction("Overlay wählen …")
         clear_action = menu.addAction("Overlay entfernen")
+        menu.addSeparator()
+        delete_action = menu.addAction("Token löschen")
         action = menu.exec(global_pos)
         if action == choose_action:
             self.overlayRequested.emit(self._token_id)
         elif action == clear_action:
             self.overlayCleared.emit(self._token_id)
+        elif action == delete_action:
+            self.deleteRequested.emit(self._token_id)

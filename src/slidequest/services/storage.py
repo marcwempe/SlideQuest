@@ -30,7 +30,11 @@ class SlideStorage:
 
     def load_slides(self) -> list[SlideData]:
         project = self._project_service.load_project()
-        if not project.get("slides"):
+        if (
+            not project.get("slides")
+            and self._project_service.project_id == "default"
+            and not self._project_service.project_file.exists()
+        ):
             legacy = self._load_legacy_slides()
             if legacy:
                 project["slides"] = legacy
@@ -49,13 +53,30 @@ class SlideStorage:
             self._project_service.save_project(project)
         if slides:
             return slides
-        return self._seed_from_layouts()
+        default_slide = SlideData(
+            title="Neue Folie",
+            subtitle="",
+            group="All",
+            layout=SlideLayoutPayload("1S|100/1R|100", "", []),
+            audio=SlideAudioPayload(),
+            notes=SlideNotesPayload(),
+        )
+        project["slides"] = [self._slide_to_payload(default_slide)]
+        self._project_service.save_project(project)
+        return [default_slide]
 
     def save_slides(self, slides: list[SlideData]) -> None:
         project = self._project_service.load_project()
         project["slides"] = [self._slide_to_payload(slide) for slide in slides]
         files = project.setdefault("files", project.get("files") or {})
         used_paths = self._collect_asset_paths(slides)
+        for entry in self._project_service.token_entries():
+            if not isinstance(entry, dict):
+                continue
+            for key in ("source", "overlay", "mask"):
+                path = entry.get(key) or ""
+                if path:
+                    used_paths.add(path)
         for file_id, info in list(files.items()):
             path = info.get("path") or ""
             if path not in used_paths:
@@ -216,9 +237,9 @@ class SlideStorage:
         changed = False
         new_content: list[str] = []
         for path in slide.layout.content:
-            normalized, migrated = self._ensure_asset_registered("layouts", path)
+            normalized, migrated = self._ensure_asset_registered("layouts", path, clear_missing=True)
             new_content.append(normalized)
-            changed = changed or migrated
+            changed = changed or migrated or (path and not normalized)
         slide.layout.content = new_content
         slide.images = self._content_to_images(new_content)
 
@@ -237,7 +258,7 @@ class SlideStorage:
 
         return changed
 
-    def _ensure_asset_registered(self, kind: str, path: str) -> tuple[str, bool]:
+    def _ensure_asset_registered(self, kind: str, path: str, clear_missing: bool = False) -> tuple[str, bool]:
         if not path:
             return path, False
         candidate = Path(path)
@@ -247,7 +268,10 @@ class SlideStorage:
                 return path, False
             except ValueError:
                 pass
-            relative = self._project_service.import_file(kind, str(candidate))
+            try:
+                relative = self._project_service.import_file(kind, str(candidate))
+            except FileNotFoundError:
+                return ("", True) if clear_missing else (path, False)
             return relative, True
         return path, False
 

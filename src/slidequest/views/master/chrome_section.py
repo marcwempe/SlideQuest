@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QSlider,
     QToolButton,
     QVBoxLayout,
@@ -79,6 +80,8 @@ class ChromeSectionMixin:
         )
         self._status_button_map = status_button_map
         self._project_title_label = title
+        title.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        title.customContextMenuRequested.connect(self._handle_project_title_context_menu)
         trash_label = QLabel("Papierkorb: 0 MB", status_bar)
         trash_label.setObjectName("ProjectTrashLabel")
         trash_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -133,6 +136,18 @@ class ChromeSectionMixin:
             if button is not None and callable(handler):
                 signal = button.toggled if button.isCheckable() else button.clicked
                 signal.connect(handler)
+
+    def _handle_project_title_context_menu(self, pos) -> None:
+        label = self._project_title_label
+        if label is None:
+            return
+        menu = QMenu(label)
+        delete_action = menu.addAction("Projekt entfernen …")
+        action = menu.exec(label.mapToGlobal(pos))
+        if action == delete_action:
+            handler = getattr(self, "_handle_project_delete_requested", None)
+            if callable(handler):
+                handler()
 
     # ------------------------------------------------------------------ #
     # Theming
