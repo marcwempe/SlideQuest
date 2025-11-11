@@ -59,7 +59,7 @@ class AudioService(QObject):
         self._context_tracks.pop(context, None)
 
     def play_preview(self, source: str, *, loop: bool = False) -> None:
-        self._stop_preview_player()
+        self._stop_preview_player(emit_signal=False)
         absolute = resolve_media_path(source)
         player = QMediaPlayer()
         output = QAudioOutput()
@@ -76,13 +76,20 @@ class AudioService(QObject):
         player = self._preview_player
         if player is None:
             return
-        if status == QMediaPlayer.MediaStatus.EndOfMedia or status == QMediaPlayer.MediaStatus.InvalidMedia:
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            loops = player.loops()
+            is_infinite = loops == QMediaPlayer.Loops.Infinite or (isinstance(loops, int) and loops < 0)
+            if is_infinite:
+                return
+            self._stop_preview_player()
+        elif status == QMediaPlayer.MediaStatus.InvalidMedia:
             self._stop_preview_player()
 
     def stop_preview(self) -> None:
         self._stop_preview_player()
 
-    def _stop_preview_player(self) -> None:
+    def _stop_preview_player(self, *, emit_signal: bool = True) -> None:
+        had_player = self._preview_player is not None
         if self._preview_player is not None:
             self._preview_player.stop()
             self._preview_player.deleteLater()
@@ -90,7 +97,8 @@ class AudioService(QObject):
         if self._preview_output is not None:
             self._preview_output.deleteLater()
             self._preview_output = None
-        self.preview_finished.emit()
+        if emit_signal and had_player:
+            self.preview_finished.emit()
 
     def set_tracks(self, tracks: list[PlaylistTrack], *, new_context: bool = False) -> None:
         was_empty = True if new_context else not self._current_tracks()

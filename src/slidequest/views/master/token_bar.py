@@ -119,6 +119,7 @@ class _TokenButton(QToolButton):
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.setFixedSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.setToolTip("")
         self.setStyleSheet(
             """
             QToolButton {
@@ -153,6 +154,7 @@ class _TokenButton(QToolButton):
             self._thumbnail = pixmap
         self.setIconSize(QSize(SYMBOL_BUTTON_SIZE - 6, SYMBOL_BUTTON_SIZE - 6))
         self._drag_start_pos = QPoint()
+        self._dragging = False
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         if event.button() == Qt.MouseButton.RightButton:
@@ -161,21 +163,34 @@ class _TokenButton(QToolButton):
         super().mousePressEvent(event)
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_pos = event.position().toPoint()
+            self._dragging = True
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
-        if event.buttons() & Qt.MouseButton.LeftButton == 0:
+        if not self._dragging or event.buttons() & Qt.MouseButton.LeftButton == 0:
             super().mouseMoveEvent(event)
             return
         if (event.position().toPoint() - self._drag_start_pos).manhattanLength() < 6:
-            super().mouseMoveEvent(event)
             return
         drag = QDrag(self)
         mime = QMimeData()
         mime.setData(_TOKEN_MIME, self._token_id.encode("utf-8"))
         drag.setMimeData(mime)
-        if self._thumbnail and not self._thumbnail.isNull():
-            drag.setPixmap(self._thumbnail.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        pixmap = self._thumbnail
+        if pixmap is not None and not pixmap.isNull():
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(pixmap.rect().center())
+        else:
+            blank = QPixmap()
+            drag.setPixmap(blank)
+            drag.setDragCursor(blank, Qt.DropAction.CopyAction)
+            drag.setDragCursor(blank, Qt.DropAction.MoveAction)
         drag.exec(Qt.DropAction.CopyAction)
+        self._dragging = False
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = False
+        super().mouseReleaseEvent(event)
 
     def _show_context_menu(self, global_pos: QPoint) -> None:
         menu = QMenu(self)

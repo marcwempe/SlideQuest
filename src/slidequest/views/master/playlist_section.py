@@ -202,13 +202,12 @@ class PlaylistSectionMixin:
         while layout.count():
             item = layout.takeAt(0)
             widget = item.widget()
-            if widget is None:
-                continue
-            if widget is placeholder:
-                widget.setParent(None)
-                continue
-            else:
-                widget.deleteLater()
+            if widget is not None:
+                if widget is placeholder:
+                    placeholder.hide()
+                    placeholder.setParent(None)
+                else:
+                    widget.deleteLater()
         entries = self._viewmodel.soundboard_entries()
         self._soundboard_buttons = []
         slide_state_keys = set()
@@ -228,6 +227,7 @@ class PlaylistSectionMixin:
             self._soundboard_active_index = None
             self._soundboard_active_key = None
             if placeholder is not None:
+                placeholder.show()
                 layout.addWidget(placeholder)
             layout.addStretch(1)
             return
@@ -389,6 +389,12 @@ class PlaylistSectionMixin:
                 border-radius: 10px;
                 padding: 1px;
                 background-color: rgba(0, 0, 0, 0.40);
+            }}
+            QToolButton:hover {{
+                background-color: rgba(255, 255, 255, 0.08);
+            }}
+            QToolButton:pressed {{
+                background-color: rgba(255, 255, 255, 0.16);
             }}
             """
         )
