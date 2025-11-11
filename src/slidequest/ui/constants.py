@@ -85,13 +85,6 @@ SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         checkable=True,
         auto_exclusive=True,
     ),
-    ButtonSpec(
-        "FileExplorerLauncher",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "folder.svg",
-        "Dateiexplorer öffnen",
-        checkable=True,
-        auto_exclusive=True,
-    ),
 )
 
 PRESENTATION_BUTTON_SPEC = ButtonSpec(
