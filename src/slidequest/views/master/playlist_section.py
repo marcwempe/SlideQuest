@@ -13,7 +13,6 @@ from PySide6.QtGui import (
     QImage,
     QPainter,
     QPainterPath,
-    QPalette,
     QPixmap,
     QColor,
 )
@@ -387,7 +386,7 @@ class PlaylistSectionMixin:
                     offset_y = max(0, (scaled.height() - edge) // 2)
                     painter.drawPixmap(0, 0, scaled, offset_x, offset_y, edge, edge)
                 else:
-                    painter.fillRect(canvas.rect(), QColor(255, 255, 255, 20))
+                    painter.fillRect(canvas.rect(), QColor(255, 255, 255, 255))
             else:
                 painter.fillRect(canvas.rect(), QColor(255, 255, 255, 20))
             painter.setClipping(False)
@@ -403,7 +402,7 @@ class PlaylistSectionMixin:
                     )
                     tinted = QPixmap(badge.size())
                     tinted.fill(Qt.GlobalColor.transparent)
-                    contrast_color = self.palette().color(QPalette.ColorRole.BrightText)
+                    contrast_color = QColor(Qt.GlobalColor.white)
                     badge_painter = QPainter(tinted)
                     badge_painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                     badge_painter.drawPixmap(0, 0, badge)
