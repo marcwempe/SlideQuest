@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QDoubleValidator, QFont
+from PySide6.QtCore import Qt, QSize, Signal, QRectF
+from PySide6.QtGui import (
+    QDoubleValidator,
+    QDragEnterEvent,
+    QDragMoveEvent,
+    QDropEvent,
+    QIcon,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPixmap,
+    QColor,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -19,11 +31,13 @@ from shiboken6 import Shiboken
 
 from slidequest.models.slide import PlaylistTrack
 from slidequest.ui.constants import (
+    ACTION_ICONS,
     ICON_PIXMAP_SIZE,
     PLAYLIST_CONTROL_SPECS,
     PLAYLIST_ITEM_ICONS,
     PLAYLIST_VOLUME_BUTTONS,
     STATUS_ICON_SIZE,
+    SYMBOL_BUTTON_SIZE,
     ButtonSpec,
 )
 from slidequest.views.widgets.playlist_list import PlaylistListWidget
@@ -49,6 +63,13 @@ class PlaylistSectionMixin:
         self._playlist_last_volume_value = 75
         self._playlist_empty_label: QLabel | None = None
         self._audio_context_reset_pending = False
+        self._soundboard_bar: _SoundboardBar | None = None
+        self._soundboard_layout: QHBoxLayout | None = None
+        self._soundboard_placeholder: QLabel | None = None
+        self._soundboard_buttons: list[_SoundboardButton] = []
+        self._soundboard_states: dict[str, int] = {}
+        self._soundboard_active_index: int | None = None
+        self._soundboard_active_key: str | None = None
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -66,13 +87,7 @@ class PlaylistSectionMixin:
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(8, 8, 8, 8)
         header_layout.setSpacing(8)
-        title = QLabel("Playlist-Steuerung", header)
-        title.setObjectName("PlaylistDetailTitleLabel")
-        header_font = QFont(title.font())
-        header_font.setWeight(QFont.Weight.DemiBold)
-        title.setFont(header_font)
-        header_layout.addWidget(title)
-        header_layout.addStretch(1)
+        self._build_soundboard_bar(header, header_layout)
         layout.addWidget(header)
 
         playlist_container = QFrame(view)
@@ -81,14 +96,6 @@ class PlaylistSectionMixin:
         playlist_layout = QVBoxLayout(playlist_container)
         playlist_layout.setContentsMargins(12, 12, 12, 12)
         playlist_layout.setSpacing(8)
-
-        playlist_title = QLabel("Playlist", playlist_container)
-        playlist_title.setObjectName("AudioPlaylistTitleLabel")
-        playlist_font = QFont(playlist_title.font())
-        playlist_font.setPointSize(max(10, playlist_font.pointSize()))
-        playlist_font.setWeight(QFont.Weight.DemiBold)
-        playlist_title.setFont(playlist_font)
-        playlist_layout.addWidget(playlist_title)
 
         playlist_body = QWidget(playlist_container)
         playlist_body_layout = QVBoxLayout(playlist_body)
@@ -167,7 +174,249 @@ class PlaylistSectionMixin:
         layout.addWidget(playlist_container, 1)
         layout.addWidget(controls_footer)
         self._populate_playlist_tracks()
+        self._refresh_soundboard_buttons()
         return view
+
+    def _build_soundboard_bar(self, parent: QWidget, layout: QHBoxLayout) -> None:
+        bar = _SoundboardBar(parent)
+        bar.filesDropped.connect(self._handle_soundboard_audio_dropped)
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(0, 0, 0, 0)
+        bar_layout.setSpacing(6)
+        placeholder = QLabel("Audio hierher ziehen, um Soundboard-Buttons zu erstellen.", bar)
+        placeholder.setObjectName("SoundboardPlaceholderLabel")
+        placeholder.setStyleSheet("color: rgba(255,255,255,120);")
+        bar_layout.addWidget(placeholder)
+        bar_layout.addStretch(1)
+        layout.addWidget(bar, 1)
+        self._soundboard_bar = bar
+        self._soundboard_layout = bar_layout
+        self._soundboard_placeholder = placeholder
+
+    def _refresh_soundboard_buttons(self) -> None:
+        layout = self._soundboard_layout
+        placeholder = self._soundboard_placeholder
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is None:
+                continue
+            if widget is placeholder:
+                widget.setParent(None)
+                continue
+            else:
+                widget.deleteLater()
+        entries = self._viewmodel.soundboard_entries()
+        self._soundboard_buttons = []
+        if not entries:
+            self._soundboard_states.clear()
+            self._soundboard_active_index = None
+            self._soundboard_active_key = None
+            if placeholder is not None:
+                layout.addWidget(placeholder)
+            layout.addStretch(1)
+            return
+        if placeholder is not None:
+            placeholder.hide()
+        updated_states: dict[str, int] = {}
+        for index, entry in enumerate(entries):
+            key = self._soundboard_key_for_entry(entry, index)
+            state = self._soundboard_states.get(key, 0)
+            updated_states[key] = state
+            button = _SoundboardButton(index)
+            button.setToolTip(entry.get("title") or Path(entry.get("source", "")).name or f"Sample {index + 1}")
+            button.clicked.connect(lambda _, idx=index: self._handle_soundboard_button_clicked(idx))
+            button.imageDropped.connect(self._handle_soundboard_image_dropped)
+            self._apply_soundboard_button_style(button, entry.get("image") or "", state)
+            layout.addWidget(button)
+            self._soundboard_buttons.append(button)
+        layout.addStretch(1)
+        self._soundboard_states = updated_states
+
+    def _handle_soundboard_audio_dropped(self, files: list[str]) -> None:
+        if not files:
+            return
+        added = False
+        for raw in files:
+            source = raw[7:] if raw.startswith("file://") else raw
+            path = Path(source)
+            if not path.exists():
+                continue
+            stored = self._project_service.import_file("audio", str(path))
+            self._viewmodel.add_soundboard_entry(stored)
+            added = True
+        if added:
+            self._refresh_soundboard_buttons()
+
+    def _handle_soundboard_image_dropped(self, index: int, path: str) -> None:
+        source = path[7:] if path.startswith("file://") else path
+        candidate = Path(source)
+        if not candidate.exists():
+            return
+        thumbnail = self._create_soundboard_thumbnail(candidate)
+        if thumbnail is None:
+            return
+        try:
+            stored = self._project_service.import_file("soundboard", str(thumbnail))
+        finally:
+            thumbnail.unlink(missing_ok=True)
+        self._viewmodel.update_soundboard_image(index, stored)
+        self._refresh_soundboard_buttons()
+
+    def _create_soundboard_thumbnail(self, source: Path) -> Path | None:
+        image = QImage(str(source))
+        if image.isNull():
+            return None
+        edge = self._soundboard_image_edge()
+        target_size = QSize(edge, edge)
+        scaled = image.scaled(
+            target_size,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        canvas = QImage(edge, edge, QImage.Format_ARGB32_Premultiplied)
+        canvas.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        clip_path = QPainterPath()
+        clip_path.addRoundedRect(QRectF(0, 0, edge, edge), 10, 10)
+        painter.setClipPath(clip_path)
+        offset_x = max(0, (scaled.width() - edge) // 2)
+        offset_y = max(0, (scaled.height() - edge) // 2)
+        painter.drawImage(QRectF(0, 0, edge, edge), scaled, QRectF(offset_x, offset_y, edge, edge))
+        painter.end()
+        handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        temp = Path(handle.name)
+        handle.close()
+        if not canvas.save(str(temp), "PNG"):
+            temp.unlink(missing_ok=True)
+            return None
+        return temp
+
+    def _handle_soundboard_preview_finished(self) -> None:
+        if self._soundboard_active_key is None:
+            return
+        key = self._soundboard_active_key
+        state = self._soundboard_states.get(key, 0)
+        if state == 2:
+            return
+        self._soundboard_states[key] = 0
+        self._soundboard_active_key = None
+        self._soundboard_active_index = None
+        self._refresh_soundboard_buttons()
+
+    def _handle_soundboard_button_clicked(self, index: int) -> None:
+        entry = self._get_soundboard_entry(index)
+        if entry is None:
+            return
+        key = self._soundboard_key_for_entry(entry, index)
+        state = self._soundboard_states.get(key, 0)
+        if state == 0:
+            if self._soundboard_active_index is not None:
+                self._reset_soundboard_state(self._soundboard_active_key)
+                self._audio_service.stop_preview()
+            if self._start_soundboard_play(index, key, loop=False):
+                self._soundboard_states[key] = 1
+        elif state == 1:
+            if self._start_soundboard_play(index, key, loop=True):
+                self._soundboard_states[key] = 2
+        else:
+            self._audio_service.stop_preview()
+            self._soundboard_states[key] = 0
+            self._soundboard_active_index = None
+            self._soundboard_active_key = None
+        self._refresh_soundboard_buttons()
+
+    def _start_soundboard_play(self, index: int, key: str, *, loop: bool) -> bool:
+        source = self._viewmodel.play_soundboard_entry(index)
+        if not source:
+            return False
+        self._soundboard_active_index = index
+        self._soundboard_active_key = key
+        self._audio_service.play_preview(source, loop=loop)
+        return True
+
+    def _reset_soundboard_state(self, key: str | None) -> None:
+        if key and key in self._soundboard_states:
+            self._soundboard_states[key] = 0
+
+    def _apply_soundboard_button_style(self, button: "_SoundboardButton", image_path: str, state: int) -> None:
+        inner_edge = self._soundboard_image_edge()
+        pixmap = self._build_soundboard_pixmap(image_path, state, inner_edge)
+        button.setIcon(QIcon(pixmap) if pixmap is not None else QIcon())
+        button.setIconSize(QSize(inner_edge, inner_edge))
+        button.setText("")
+        button.setStyleSheet(
+            f"""
+            QToolButton {{
+                min-width: {SYMBOL_BUTTON_SIZE}px;
+                min-height: {SYMBOL_BUTTON_SIZE}px;
+                max-width: {SYMBOL_BUTTON_SIZE}px;
+                max-height: {SYMBOL_BUTTON_SIZE}px;
+                border: 1px solid rgba(255, 255, 255, 60);
+                border-radius: 10px;
+                padding: 1px;
+                background-color: rgba(0, 0, 0, 0.40);
+            }}
+            """
+        )
+
+    def _build_soundboard_pixmap(self, image_path: str, state: int, edge: int) -> QPixmap | None:
+        edge = max(8, edge)
+        canvas = QPixmap(edge, edge)
+        canvas.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        clip_path = QPainterPath()
+        clip_path.addRoundedRect(QRectF(0, 0, edge, edge), 10, 10)
+        painter.setClipPath(clip_path)
+        try:
+            if image_path:
+                absolute = self._project_service.resolve_asset_path(image_path)
+                source = QPixmap(str(absolute))
+                if not source.isNull():
+                    scaled = source.scaled(
+                        QSize(edge, edge),
+                        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    offset_x = max(0, (scaled.width() - edge) // 2)
+                    offset_y = max(0, (scaled.height() - edge) // 2)
+                    painter.drawPixmap(0, 0, scaled, offset_x, offset_y, edge, edge)
+                else:
+                    painter.fillRect(canvas.rect(), QColor(255, 255, 255, 20))
+            else:
+                painter.fillRect(canvas.rect(), QColor(255, 255, 255, 20))
+            painter.setClipping(False)
+            if state == 2:
+                loop_pixmap = QPixmap(str(ACTION_ICONS["loop_badge"]))
+                if not loop_pixmap.isNull():
+                    badge_size = max(16, edge // 4)
+                    badge = loop_pixmap.scaled(
+                        badge_size,
+                        badge_size,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    painter.drawPixmap(edge - badge.width() - 4, 4, badge)
+        finally:
+            painter.end()
+        return canvas
+
+    def _get_soundboard_entry(self, index: int) -> dict[str, str] | None:
+        entries = self._viewmodel.soundboard_entries()
+        if 0 <= index < len(entries):
+            return entries[index]
+        return None
+
+    def _soundboard_key_for_entry(self, entry: dict[str, str] | None, index: int) -> str:
+        source = (entry or {}).get("source")
+        return source or f"soundboard-{index}"
+
+    def _soundboard_image_edge(self) -> int:
+        return SYMBOL_BUTTON_SIZE
 
     # ------------------------------------------------------------------ #
     # Playlist UI + behaviour
@@ -690,3 +939,107 @@ class PlaylistSectionMixin:
         slide = self._current_slide or self._viewmodel.current_slide
         if slide is not None:
             self._audio_service.set_tracks(slide.audio.playlist)
+
+
+_AUDIO_EXTENSIONS = {".wav", ".wave", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".aiff", ".wma"}
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".tiff"}
+
+
+class _SoundboardBar(QFrame):
+    filesDropped = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("SoundboardBar")
+        self.setAcceptDrops(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # type: ignore[override]
+        if self._has_audio_files(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # type: ignore[override]
+        if self._has_audio_files(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # type: ignore[override]
+        files = self._extract_files(event.mimeData())
+        if files:
+            self.filesDropped.emit(files)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+    @staticmethod
+    def _has_audio_files(mime) -> bool:
+        return any(
+            url.isLocalFile() and Path(url.toLocalFile()).suffix.lower() in _AUDIO_EXTENSIONS
+            for url in mime.urls()
+        )
+
+    @staticmethod
+    def _extract_files(mime) -> list[str]:
+        paths: list[str] = []
+        for url in mime.urls():
+            if not url.isLocalFile():
+                continue
+            path = url.toLocalFile()
+            if Path(path).suffix.lower() in _AUDIO_EXTENSIONS:
+                paths.append(path)
+        return paths
+
+
+class _SoundboardButton(QToolButton):
+    imageDropped = Signal(int, str)
+
+    def __init__(self, index: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._index = index
+        self.setAcceptDrops(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setCheckable(False)
+        self.setMinimumSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+        self.setMaximumSize(SYMBOL_BUTTON_SIZE, SYMBOL_BUTTON_SIZE)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:  # type: ignore[override]
+        if self._has_image(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:  # type: ignore[override]
+        if self._has_image(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:  # type: ignore[override]
+        files = self._extract_image(event.mimeData())
+        if files:
+            self.imageDropped.emit(self._index, files[0])
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+    @staticmethod
+    def _has_image(mime) -> bool:
+        return any(
+            url.isLocalFile() and Path(url.toLocalFile()).suffix.lower() in _IMAGE_EXTENSIONS
+            for url in mime.urls()
+        )
+
+    @staticmethod
+    def _extract_image(mime) -> list[str]:
+        paths: list[str] = []
+        for url in mime.urls():
+            if not url.isLocalFile():
+                continue
+            path = url.toLocalFile()
+            if Path(path).suffix.lower() in _IMAGE_EXTENSIONS:
+                paths.append(path)
+        return paths
