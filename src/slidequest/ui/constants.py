@@ -60,6 +60,9 @@ ACTION_ICONS = {
     "collapse": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "sort-down.svg",
     "soundboard": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
     "loop_badge": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "repeat.svg",
+    "ai_assist": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "robot-ai.svg",
+    "drawer_close": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "chevron-bar-right.svg",
+    "drawer_open": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "chevron-bar-left.svg",
 }
 
 SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
@@ -82,6 +85,13 @@ SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         "NoteExplorerLauncher",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark.svg",
         "Notizübersicht öffnen",
+        checkable=True,
+        auto_exclusive=True,
+    ),
+    ButtonSpec(
+        "AIExplorerLauncher",
+        ACTION_ICONS["ai_assist"],
+        "KI-Unterstützung öffnen",
         checkable=True,
         auto_exclusive=True,
     ),

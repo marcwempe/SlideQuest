@@ -10,6 +10,10 @@ _Template_
 
 Append new tasks at the top so the most recent priorities stay visible. Remove bullets once all subtasks are complete or explicitly dropped.
 
+- Replicate Seedance Integration
+  - KI-Unterstützungsbutton in Navigation inkl. Bootstrap-Icon & API-Key-Handling (.env oder Dialog)
+  - Seedance-Steuerung im Detailbereich basierend auf docs/assets/thirdparty/replicate (Prompts, Einstellungen, Start/Status)
+  - Storage-Bereich + rechter Drawer für generierte Bilder inkl. Drag&Drop in Layoutflächen
 - Token-basierte Layout-Dekoration
   - Token-Leiste im Layout-Header einbauen (Bild + Overlay + Opacity-Map pro Token, Drag&Drop zum Befüllen)
   - Tokens per Drag&Drop auf Preview/Presentation platzieren, inkl. persistenter Position/Skalierung pro Slide

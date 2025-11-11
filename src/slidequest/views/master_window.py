@@ -35,6 +35,7 @@ from slidequest.services.project_service import ProjectStorageService
 from slidequest.services.storage import SlideStorage
 from slidequest.services.audio_service import AudioService
 from slidequest.services.transcription_service import LiveTranscriptionService, RecordingResult
+from slidequest.services.replicate_service import ReplicateService
 from slidequest.ui.constants import (
     ACTION_ICONS,
     DETAIL_HEADER_HEIGHT,
@@ -50,6 +51,7 @@ from slidequest.views.master.explorer_section import ExplorerSectionMixin
 from slidequest.views.master.notes_section import NotesSectionMixin
 from slidequest.views.master.playlist_section import PlaylistSectionMixin
 from slidequest.views.master.chrome_section import ChromeSectionMixin
+from slidequest.views.master.ai_section import AISectionMixin
 from slidequest.views.master.token_bar import TokenBar
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import IconBinding
@@ -58,6 +60,7 @@ from slidequest.views.widgets.slide_list import SlideListWidget
 
 
 class MasterWindow(
+    AISectionMixin,
     PlaylistSectionMixin,
     NotesSectionMixin,
     ChromeSectionMixin,
@@ -103,6 +106,8 @@ class MasterWindow(
         self._storage = SlideStorage(self._project_service)
         self._viewmodel = MasterViewModel(self._storage, project_service=self._project_service)
         self._viewmodel.add_listener(self._on_viewmodel_changed)
+        self._replicate_service = ReplicateService()
+        self._init_ai_service()
         self._transcription_service = LiveTranscriptionService(self._project_service)
         self._transcription_service.recording_failed.connect(self._handle_transcription_failure)
         self._transcription_service.recording_completed.connect(self._handle_async_recording_completed)
@@ -342,7 +347,15 @@ class MasterWindow(
         self._detail_preview_canvas.tokenDropped.connect(self._handle_token_canvas_drop)
         self._detail_preview_canvas.tokenTransformChanged.connect(self._handle_token_transform_changed)
         self._detail_preview_canvas.tokenDeleteRequested.connect(self._handle_token_delete_requested)
-        detail_main_layout.addWidget(self._detail_preview_canvas, 1)
+        preview_wrapper = QFrame(detail_main)
+        preview_wrapper.setObjectName("DetailPreviewWrapper")
+        preview_layout = QHBoxLayout(preview_wrapper)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(6)
+        preview_layout.addWidget(self._detail_preview_canvas, 1)
+        ai_drawer = self._build_ai_drawer(preview_wrapper)
+        preview_layout.addWidget(ai_drawer, 0)
+        detail_main_layout.addWidget(preview_wrapper, 1)
         if initial_images:
             self._detail_preview_canvas.set_area_images(self._resolve_image_paths(initial_images))
         self._sync_preview_with_current_slide()
@@ -386,6 +399,10 @@ class MasterWindow(
         detail_stack.addWidget(notes_detail)
         self._detail_view_widgets["notes"] = notes_detail
 
+        ai_detail = self._build_ai_detail_view(detail_stack)
+        detail_stack.addWidget(ai_detail)
+        self._detail_view_widgets["ai"] = ai_detail
+
         splitter.addWidget(explorer_container)
         splitter.addWidget(detail_container)
         splitter.setStretchFactor(0, 0)
@@ -403,6 +420,7 @@ class MasterWindow(
         self._apply_surface_theme()
         self._wire_symbol_launchers()
         self._wire_audio_service()
+        self._refresh_ai_galleries()
 
     def _build_token_bar(self, parent: QWidget, layout: QHBoxLayout) -> None:
         bar = TokenBar(parent)
@@ -660,6 +678,7 @@ class MasterWindow(
         self._refresh_soundboard_buttons()
         self._token_pixmap_cache.clear()
         self._refresh_token_bar()
+        self._refresh_ai_galleries()
         if update_tokens:
             self._refresh_token_overlays()
 
@@ -677,10 +696,12 @@ class MasterWindow(
         layout_button = self._symbol_button_map.get("LayoutExplorerLauncher")
         audio_button = self._symbol_button_map.get("AudioExplorerLauncher")
         note_button = self._symbol_button_map.get("NoteExplorerLauncher")
+        ai_button = self._symbol_button_map.get("AIExplorerLauncher")
         self._detail_mode_buttons = {
             "layout": layout_button,
             "audio": audio_button,
             "notes": note_button,
+            "ai": ai_button,
         }
         handlers_connected = False
         for mode, button in self._detail_mode_buttons.items():
@@ -1123,6 +1144,13 @@ class MasterWindow(
 
     def _handle_detail_launcher_toggled(self, mode: str, checked: bool) -> None:
         if checked:
+            if mode == "ai" and not self._ensure_replicate_api_token():
+                button = self._detail_mode_buttons.get(mode)
+                if button is not None:
+                    button.blockSignals(True)
+                    button.setChecked(False)
+                    button.blockSignals(False)
+                return
             self._activate_detail_mode(mode)
             return
         replacement_mode = self._resolve_checked_detail_mode(exclude=mode)

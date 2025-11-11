@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 from uuid import uuid4
@@ -175,6 +176,47 @@ class MasterViewModel:
         slide.audio.playlist = reordered
         self.persist()
         self._notify()
+
+    # --- replicate gallery --------------------------------------------
+    def replicate_entries(self) -> list[dict[str, str]]:
+        return self._project_service.replicate_entries()
+
+    def add_replicate_entry(self, stored_path: str, *, prompt: str, metadata: dict[str, str] | None = None) -> dict[str, str]:
+        entries = self._project_service.replicate_entries()
+        entry_id = uuid4().hex
+        payload = {
+            "id": entry_id,
+            "path": stored_path,
+            "prompt": prompt,
+            "created_at": datetime.utcnow().isoformat(timespec="seconds"),
+            "meta": metadata or {},
+        }
+        entries.insert(0, payload)
+        self._project_service.set_replicate_entries(entries)
+        self._notify()
+        return payload
+
+    def remove_replicate_entry(self, entry_id: str) -> None:
+        if not entry_id:
+            return
+        entries = self._project_service.replicate_entries()
+        filtered = [entry for entry in entries if entry.get("id") != entry_id]
+        if len(filtered) == len(entries):
+            return
+        self._project_service.set_replicate_entries(filtered)
+        self._notify()
+
+    def import_replicate_asset(self, source: str) -> str:
+        path = Path(source[7:] if source.startswith("file://") else source)
+        if not path.exists():
+            raise FileNotFoundError(source)
+        return self._project_service.import_file("replicate", str(path))
+
+    def get_replicate_entry(self, entry_id: str) -> dict[str, str] | None:
+        for entry in self._project_service.replicate_entries():
+            if entry.get("id") == entry_id:
+                return entry
+        return None
 
     # --- notes --------------------------------------------------------
     def note_documents(self) -> list[str]:

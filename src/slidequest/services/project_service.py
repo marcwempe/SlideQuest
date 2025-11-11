@@ -220,6 +220,16 @@ class ProjectStorageService:
         project["tokens"] = entries
         self.save_project(project)
 
+    def replicate_entries(self) -> list[dict[str, str]]:
+        project = self.load_project()
+        gallery = project.setdefault("replicate_gallery", [])
+        return [entry for entry in gallery if isinstance(entry, dict)]
+
+    def set_replicate_entries(self, entries: list[dict[str, str]]) -> None:
+        project = self.load_project()
+        project["replicate_gallery"] = entries
+        self.save_project(project)
+
     def trash_path(self) -> Path:
         path = self.project_dir / ".trash"
         path.mkdir(parents=True, exist_ok=True)

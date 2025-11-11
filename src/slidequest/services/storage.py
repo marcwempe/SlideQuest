@@ -84,6 +84,12 @@ class SlideStorage:
                 path = entry.get(key) or ""
                 if path:
                     used_paths.add(path)
+        for entry in self._project_service.replicate_entries():
+            if not isinstance(entry, dict):
+                continue
+            path = entry.get("path") or ""
+            if path:
+                used_paths.add(path)
         for file_id, info in list(files.items()):
             path = info.get("path") or ""
             if path not in used_paths:
