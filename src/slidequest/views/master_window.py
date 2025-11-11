@@ -52,7 +52,7 @@ from slidequest.viewmodels.master import MasterViewModel
 from slidequest.views.master.explorer_section import ExplorerSectionMixin
 from slidequest.views.master.notes_section import NotesSectionMixin
 from slidequest.views.master.playlist_section import PlaylistSectionMixin
-from slidequest.views.master.theme_section import ThemeAndControlsMixin
+from slidequest.views.master.chrome_section import ChromeSectionMixin
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import IconBinding
 from slidequest.views.widgets.layout_preview import LayoutPreviewCanvas, LayoutPreviewCard
@@ -67,15 +67,21 @@ STATUS_VOLUME_BUTTONS = {
 }
 
 
-class MasterWindow(PlaylistSectionMixin, NotesSectionMixin, ThemeAndControlsMixin, ExplorerSectionMixin, QMainWindow):
+class MasterWindow(
+    PlaylistSectionMixin,
+    NotesSectionMixin,
+    ChromeSectionMixin,
+    ExplorerSectionMixin,
+    QMainWindow,
+):
     """Top-level control surface for SlideQuest."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("SlideQuest – Master")
         self.setMinimumSize(960, 600)
-        self._status_bar: QFrame | None = None
-        self._symbol_view: QFrame | None = None
+        self._project_status_bar: QFrame | None = None
+        self._navigation_rail: QFrame | None = None
         self._presentation_button: QToolButton | None = None
         self._explorer_container: QWidget | None = None
         self._presentation_window: PresentationWindow | None = None
@@ -134,9 +140,9 @@ class MasterWindow(PlaylistSectionMixin, NotesSectionMixin, ThemeAndControlsMixi
         layout.setSpacing(0)
 
         status_bar = QFrame(central)
-        status_bar.setObjectName("StatusBar")
+        status_bar.setObjectName("ProjectStatusBar")
         status_bar.setFixedHeight(STATUS_BAR_SIZE)
-        self._status_bar = status_bar
+        self._project_status_bar = status_bar
         self._build_status_bar(status_bar)
 
         viewport = QFrame(central)
@@ -145,30 +151,7 @@ class MasterWindow(PlaylistSectionMixin, NotesSectionMixin, ThemeAndControlsMixi
         viewport_layout.setContentsMargins(0, 0, 0, 0)
         viewport_layout.setSpacing(0)
 
-        symbol_view = QFrame(viewport)
-        symbol_view.setObjectName("SymbolView")
-        symbol_view.setFixedWidth(STATUS_BAR_SIZE)
-        self._symbol_view = symbol_view
-        symbol_layout = QVBoxLayout(symbol_view)
-        symbol_layout.setContentsMargins(4, 4, 4, 4)
-        symbol_layout.setSpacing(8)
-        self._symbol_button_map = self._build_buttons(
-            symbol_view,
-            symbol_layout,
-            SYMBOL_BUTTON_SPECS,
-            size=SYMBOL_BUTTON_SIZE,
-            registry=self._symbol_buttons,
-        )
-        symbol_layout.addStretch(1)
-        presentation_button = self._build_buttons(
-            symbol_view,
-            symbol_layout,
-            (PRESENTATION_BUTTON_SPEC,),
-            size=SYMBOL_BUTTON_SIZE,
-            registry=self._symbol_buttons,
-        )[PRESENTATION_BUTTON_SPEC.name]
-        presentation_button.clicked.connect(self._show_presentation_window)
-        self._presentation_button = presentation_button
+        symbol_view = self._build_symbol_view(viewport)
 
         splitter = QSplitter(Qt.Orientation.Horizontal, viewport)
         splitter.setObjectName("ContentSplitter")

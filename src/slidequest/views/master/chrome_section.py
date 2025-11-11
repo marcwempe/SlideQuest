@@ -20,6 +20,7 @@ from slidequest.services.storage import PROJECT_ROOT
 from slidequest.ui.constants import (
     ACTION_ICONS,
     ICON_PIXMAP_SIZE,
+    PRESENTATION_BUTTON_SPEC,
     STATUS_BAR_SIZE,
     STATUS_BUTTON_SPECS,
     STATUS_ICON_SIZE,
@@ -31,10 +32,11 @@ from slidequest.ui.constants import (
 from slidequest.views.widgets.common import IconBinding, IconToolButton
 
 
-class ThemeAndControlsMixin:
-    """Provides reusable status bar construction, theming and icon helpers."""
+class ChromeSectionMixin:
+    """Provides reusable chrome (status bar, launcher) plus theming + icon helpers."""
 
     def _build_status_bar(self, status_bar: QFrame) -> None:
+        self._project_status_bar = status_bar
         layout = QHBoxLayout(status_bar)
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(16)
@@ -48,7 +50,7 @@ class ThemeAndControlsMixin:
         title_container_layout = QVBoxLayout(title_container)
 
         logo_label = QLabel(left_container)
-        logo_label.setObjectName("StatusLogoLabel")
+        logo_label.setObjectName("ProjectLogoLabel")
         logo_pix = QPixmap(str(PROJECT_ROOT / "assets" / "others" / "SlideQuestLogo_small.png"))
         logo_label.setPixmap(logo_pix)
         logo_label.setFixedSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
@@ -58,75 +60,57 @@ class ThemeAndControlsMixin:
         title_container_layout.setContentsMargins(4, 4, 4, 4)
         title_container_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         title = QLabel("SlideQuest", title_container)
-        title.setObjectName("StatusTitleLabel")
+        title.setObjectName("ProjectTitleLabel")
         title_font = QFont(title.font())
         title_font.setWeight(QFont.Weight.DemiBold)
         title.setFont(title_font)
         title_container_layout.addWidget(title)
         left_layout.addWidget(title_container, 1)
 
-        center_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
-        center_slider.setObjectName("AudioSeekSlider")
-        center_slider.setRange(0, 10_000)
-        center_slider.setValue(0)
-        center_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
-
         right_container = QWidget(status_bar)
         right_layout = QHBoxLayout(right_container)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        transport_layout = QHBoxLayout()
-        transport_layout.setContentsMargins(0, 0, 0, 0)
-        transport_layout.setSpacing(4)
-        transport_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        volume_layout = QHBoxLayout()
-        volume_layout.setContentsMargins(0, 0, 0, 0)
-        volume_layout.setSpacing(4)
-        volume_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-
-        def status_layout(spec: ButtonSpec) -> QHBoxLayout:
-            return volume_layout if spec.name in STATUS_VOLUME_BUTTONS else transport_layout
-
         status_button_map = self._build_buttons(
             status_bar,
-            transport_layout,
+            right_layout,
             STATUS_BUTTON_SPECS,
             size=STATUS_ICON_SIZE,
             registry=self._status_buttons,
-            layout_getter=status_layout,
         )
         self._status_button_map = status_button_map
-        self._volume_button_map = {
-            name: btn for name, btn in status_button_map.items() if name in STATUS_VOLUME_BUTTONS
-        }
-
-        volume_slider = QSlider(Qt.Orientation.Horizontal, status_bar)
-        volume_slider.setObjectName("VolumeSlider")
-        volume_slider.setRange(0, 100)
-        volume_slider.setValue(75)
-        volume_slider.setFixedWidth(120)
-        volume_slider.setFixedHeight(STATUS_ICON_SIZE - 8)
-        self._volume_slider = volume_slider
-        volume_slider_shell = self._wrap_slider(volume_slider, status_bar)
-        if (volume_shell_layout := volume_slider_shell.layout()) is not None:
-            volume_shell_layout.setContentsMargins(4, 5, 4, 0)
-        volume_layout.insertWidget(2, volume_slider_shell)
-
-        self._wire_volume_buttons(self._volume_button_map)
-
-        right_layout.addLayout(transport_layout)
-        right_layout.addSpacing(16)
-        right_layout.addLayout(volume_layout)
-
-        center_slider_shell = self._wrap_slider(center_slider, status_bar)
-        if (shell_layout := center_slider_shell.layout()) is not None:
-            shell_layout.setContentsMargins(4, 5, 4, 0)
 
         layout.addWidget(left_container, 1)
-        layout.addWidget(center_slider_shell, 1)
-        layout.addWidget(right_container, 1)
+        layout.addStretch(1)
+        layout.addWidget(right_container, 0, Qt.AlignmentFlag.AlignRight)
+
+    def _build_symbol_view(self, parent: QWidget) -> QFrame:
+        symbol_view = QFrame(parent)
+        symbol_view.setObjectName("NavigationRail")
+        symbol_view.setFixedWidth(STATUS_BAR_SIZE)
+        self._navigation_rail = symbol_view
+        symbol_layout = QVBoxLayout(symbol_view)
+        symbol_layout.setContentsMargins(4, 4, 4, 4)
+        symbol_layout.setSpacing(8)
+        self._symbol_button_map = self._build_buttons(
+            symbol_view,
+            symbol_layout,
+            SYMBOL_BUTTON_SPECS,
+            size=SYMBOL_BUTTON_SIZE,
+            registry=self._symbol_buttons,
+        )
+        symbol_layout.addStretch(1)
+        presentation_button = self._build_buttons(
+            symbol_view,
+            symbol_layout,
+            (PRESENTATION_BUTTON_SPEC,),
+            size=SYMBOL_BUTTON_SIZE,
+            registry=self._symbol_buttons,
+        )[PRESENTATION_BUTTON_SPEC.name]
+        presentation_button.clicked.connect(self._show_presentation_window)
+        self._presentation_button = presentation_button
+        return symbol_view
 
     # ------------------------------------------------------------------ #
     # Theming
@@ -140,7 +124,7 @@ class ThemeAndControlsMixin:
 
         darker_ratio = 135 if is_dark else 120
         darker_surface = window_color.darker(darker_ratio)
-        for widget in (self._status_bar, self._symbol_view):
+        for widget in (self._project_status_bar, self._navigation_rail):
             if widget is not None:
                 self._apply_surface_tint(widget, darker_surface)
 
@@ -397,33 +381,5 @@ class ThemeAndControlsMixin:
         return created
 
     def _wire_volume_buttons(self, buttons: dict[str, QToolButton]) -> None:
-        slider = self._volume_slider
-        if slider is None:
-            return
-
-        def adjust(delta: int) -> None:
-            slider.setValue(max(0, min(100, slider.value() + delta)))
-
-        mute = buttons.get("StatusMuteButton")
-        if mute is not None:
-
-            def handle_mute(checked: bool) -> None:
-                if checked:
-                    self._last_volume_value = slider.value()
-                    slider.setValue(0)
-                else:
-                    slider.setValue(self._last_volume_value)
-
-            mute.toggled.connect(handle_mute)
-
-        def remember_volume(value: int) -> None:
-            if mute is None or not mute.isChecked():
-                self._last_volume_value = value
-
-        slider.valueChanged.connect(remember_volume)
-
-        if vol_down := buttons.get("StatusVolumeDownButton"):
-            vol_down.clicked.connect(lambda: adjust(-5))
-        if vol_up := buttons.get("StatusVolumeUpButton"):
-            vol_up.clicked.connect(lambda: adjust(5))
-
+        """Legacy stub for backwards compatibility."""
+        return

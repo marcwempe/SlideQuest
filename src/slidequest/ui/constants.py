@@ -37,6 +37,26 @@ class ButtonSpec:
         self.checked_by_default = checked_by_default
 
 
+ACTION_ICONS = {
+    "search": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "search.svg",
+    "filter": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "filter.svg",
+    "create": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "plus-square.svg",
+    "edit": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "pencil-square.svg",
+    "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
+    "text_bold": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-bold.svg",
+    "text_italic": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-italic.svg",
+    "text_underline": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-underline.svg",
+    "text_strike": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-strikethrough.svg",
+    "list_bullet": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "list-ul.svg",
+    "list_number": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "list-ol.svg",
+    "quote": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "blockquote-left.svg",
+    "code": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "code.svg",
+    "heading_1": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h1.svg",
+    "heading_2": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h2.svg",
+    "heading_3": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h3.svg",
+    "clear": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-clear.svg",
+}
+
 SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
     ButtonSpec(
         "LayoutExplorerLauncher",
@@ -77,92 +97,23 @@ PRESENTATION_BUTTON_SPEC = ButtonSpec(
 
 STATUS_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
     ButtonSpec(
-        "StatusShuffleButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "shuffle.svg",
-        "Shuffle aktivieren",
-        checkable=True,
-        accent_on_checked=True,
+        "ProjectNewButton",
+        ACTION_ICONS["create"],
+        "Neues Projekt anlegen",
     ),
     ButtonSpec(
-        "StatusPreviousTrackButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "skip-backward-fill.svg",
-        "Vorheriger Titel",
+        "ProjectOpenButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "folder.svg",
+        "Projekt öffnen",
     ),
     ButtonSpec(
-        "StatusPlayPauseButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "play-fill.svg",
-        "Play/Pause",
-        checkable=True,
-        accent_on_checked=True,
-        checked_icon=PROJECT_ROOT
-        / "assets"
-        / "icons"
-        / "bootstrap"
-        / "audio"
-        / "pause-fill.svg",
-    ),
-    ButtonSpec(
-        "StatusStopButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "stop-fill.svg",
-        "Stopp",
-    ),
-    ButtonSpec(
-        "StatusNextTrackButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "skip-forward-fill.svg",
-        "Nächster Titel",
-    ),
-    ButtonSpec(
-        "StatusLoopButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "repeat.svg",
-        "Loop aktivieren",
-        checkable=True,
-        accent_on_checked=True,
-        checked_by_default=True,
-    ),
-    ButtonSpec(
-        "StatusMuteButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-mute.svg",
-        "Stummschalten",
-        checkable=True,
-        accent_on_checked=True,
-    ),
-    ButtonSpec(
-        "StatusVolumeDownButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-down.svg",
-        "Leiser",
-    ),
-    ButtonSpec(
-        "StatusVolumeUpButton",
-        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "volume-up.svg",
-        "Lauter",
+        "ProjectExportButton",
+        PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "file-earmark-arrow-up.svg",
+        "Projekt exportieren",
     ),
 )
 
-STATUS_VOLUME_BUTTONS = {
-    "StatusMuteButton",
-    "StatusVolumeDownButton",
-    "StatusVolumeUpButton",
-}
-
-ACTION_ICONS = {
-    "search": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "search.svg",
-    "filter": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "filter.svg",
-    "create": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "plus-square.svg",
-    "edit": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "pencil-square.svg",
-    "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
-    "text_bold": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-bold.svg",
-    "text_italic": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-italic.svg",
-    "text_underline": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-underline.svg",
-    "text_strike": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-strikethrough.svg",
-    "list_bullet": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "list-ul.svg",
-    "list_number": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "list-ol.svg",
-    "quote": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "blockquote-left.svg",
-    "code": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "code.svg",
-    "heading_1": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h1.svg",
-    "heading_2": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h2.svg",
-    "heading_3": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h3.svg",
-    "clear": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-clear.svg",
-}
+STATUS_VOLUME_BUTTONS: set[str] = set()
 
 EXPLORER_CRUD_SPECS: tuple[ButtonSpec, ...] = (
     ButtonSpec("ExplorerCreateButton", ACTION_ICONS["create"], "Neuen Eintrag anlegen"),
