@@ -215,6 +215,36 @@ class MasterViewModel:
             self._project_service.set_note_title(reference, title)
         return title or current or Path(reference).stem
 
+    # --- soundboard ---------------------------------------------------
+    def soundboard_entries(self) -> list[dict[str, str]]:
+        return self._project_service.soundboard_entries()
+
+    def add_soundboard_entry(self, source: str, title: str | None = None, image: str | None = None) -> None:
+        entries = self.soundboard_entries()
+        entries.append(
+            {
+                "source": source,
+                "title": title or Path(source).stem,
+                "image": image or "",
+            }
+        )
+        self._project_service.set_soundboard_entries(entries)
+        self._notify()
+
+    def update_soundboard_image(self, index: int, image: str) -> None:
+        entries = self.soundboard_entries()
+        if not (0 <= index < len(entries)):
+            return
+        entries[index]["image"] = image
+        self._project_service.set_soundboard_entries(entries)
+        self._notify()
+
+    def play_soundboard_entry(self, index: int) -> str | None:
+        entries = self.soundboard_entries()
+        if not (0 <= index < len(entries)):
+            return None
+        return entries[index]["source"]
+
     def _derive_note_title(self, reference: str) -> str:
         absolute = self._project_service.resolve_asset_path(reference)
         if absolute.exists():

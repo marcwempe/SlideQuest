@@ -388,6 +388,7 @@ class MasterWindow(
         self._populate_playlist_tracks()
         self._populate_note_documents()
         self._update_trash_label()
+        self._refresh_soundboard_buttons()
 
     def attach_presentation_window(self, window: PresentationWindow) -> None:
         """Register an external presentation window instance."""
@@ -426,6 +427,7 @@ class MasterWindow(
         service.track_state_changed.connect(self._handle_audio_track_state_changed)
         service.position_changed.connect(self._handle_audio_position_changed)
         service.duration_changed.connect(self._handle_audio_duration_changed)
+        service.preview_finished.connect(self._handle_soundboard_preview_finished)
 
     # ------------------------------------------------------------------ #
     # Project actions

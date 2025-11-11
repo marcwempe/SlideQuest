@@ -175,6 +175,16 @@ class ProjectStorageService:
                 return info.get("note_title") or ""
         return ""
 
+    def soundboard_entries(self) -> list[dict[str, str]]:
+        project = self.load_project()
+        board = project.setdefault("soundboard", [])
+        return [entry for entry in board if isinstance(entry, dict)]
+
+    def set_soundboard_entries(self, entries: list[dict[str, str]]) -> None:
+        project = self.load_project()
+        project["soundboard"] = entries
+        self.save_project(project)
+
     def trash_path(self) -> Path:
         path = self.project_dir / ".trash"
         path.mkdir(parents=True, exist_ok=True)

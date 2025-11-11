@@ -19,6 +19,7 @@ class AudioService(QObject):
     track_state_changed = Signal(int, bool)
     position_changed = Signal(int, int)
     duration_changed = Signal(int, int)
+    preview_finished = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -33,6 +34,8 @@ class AudioService(QObject):
         self._manual_stop_fades: set[PlayerKey] = set()
         self._pending_play: set[PlayerKey] = set()
         self._master_volume = 1.0
+        self._preview_player: QMediaPlayer | None = None
+        self._preview_output: QAudioOutput | None = None
 
     def _current_tracks(self) -> list[PlaylistTrack]:
         return self._context_tracks.setdefault(self._active_context, [])
@@ -54,6 +57,40 @@ class AudioService(QObject):
         if any(key.context == context for key in self._players.keys()):
             return
         self._context_tracks.pop(context, None)
+
+    def play_preview(self, source: str, *, loop: bool = False) -> None:
+        self._stop_preview_player()
+        absolute = resolve_media_path(source)
+        player = QMediaPlayer()
+        output = QAudioOutput()
+        output.setVolume(self._master_volume)
+        player.setAudioOutput(output)
+        player.setSource(QUrl.fromLocalFile(absolute))
+        player.setLoops(QMediaPlayer.Loops.Infinite if loop else 1)
+        player.mediaStatusChanged.connect(lambda status: self._handle_preview_status(status))
+        player.play()
+        self._preview_player = player
+        self._preview_output = output
+
+    def _handle_preview_status(self, status) -> None:
+        player = self._preview_player
+        if player is None:
+            return
+        if status == QMediaPlayer.MediaStatus.EndOfMedia or status == QMediaPlayer.MediaStatus.InvalidMedia:
+            self._stop_preview_player()
+
+    def stop_preview(self) -> None:
+        self._stop_preview_player()
+
+    def _stop_preview_player(self) -> None:
+        if self._preview_player is not None:
+            self._preview_player.stop()
+            self._preview_player.deleteLater()
+            self._preview_player = None
+        if self._preview_output is not None:
+            self._preview_output.deleteLater()
+            self._preview_output = None
+        self.preview_finished.emit()
 
     def set_tracks(self, tracks: list[PlaylistTrack], *, new_context: bool = False) -> None:
         was_empty = True if new_context else not self._current_tracks()
