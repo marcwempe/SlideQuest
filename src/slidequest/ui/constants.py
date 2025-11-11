@@ -55,6 +55,7 @@ ACTION_ICONS = {
     "heading_2": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h2.svg",
     "heading_3": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h3.svg",
     "clear": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-clear.svg",
+    "microphone": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "mic.svg",
 }
 
 SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
@@ -125,6 +126,13 @@ STATUS_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         "ProjectRevealButton",
         PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "files" / "folder-plus.svg",
         "Projektordner öffnen",
+    ),
+    ButtonSpec(
+        "ProjectRecordButton",
+        ACTION_ICONS["microphone"],
+        "Live-Transkript starten/stoppen",
+        checkable=True,
+        accent_on_checked=True,
     ),
 )
 

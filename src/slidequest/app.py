@@ -14,6 +14,8 @@ def main() -> None:
     owns_event_loop = app is None
     if owns_event_loop:
         app = QApplication(sys.argv)
+        app.setApplicationName("SlideQuest")
+        app.setOrganizationName("SlideQuest")
 
     master = MasterWindow()
     presentation = PresentationWindow()

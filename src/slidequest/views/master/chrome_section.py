@@ -18,13 +18,11 @@ from shiboken6 import Shiboken
 
 from slidequest.services.storage import PROJECT_ROOT
 from slidequest.ui.constants import (
-    ACTION_ICONS,
     ICON_PIXMAP_SIZE,
     PRESENTATION_BUTTON_SPEC,
     STATUS_BAR_SIZE,
     STATUS_BUTTON_SPECS,
     STATUS_ICON_SIZE,
-    STATUS_VOLUME_BUTTONS,
     SYMBOL_BUTTON_SIZE,
     SYMBOL_BUTTON_SPECS,
     ButtonSpec,
@@ -127,12 +125,14 @@ class ChromeSectionMixin:
             "ProjectImportButton": "_handle_project_import_clicked",
             "ProjectPruneButton": "_handle_project_prune_clicked",
             "ProjectRevealButton": "_handle_project_reveal_clicked",
+            "ProjectRecordButton": "_handle_project_record_toggled",
         }
         for name, handler_name in mapping.items():
             button = buttons.get(name)
             handler = getattr(self, handler_name, None)
             if button is not None and callable(handler):
-                button.clicked.connect(handler)
+                signal = button.toggled if button.isCheckable() else button.clicked
+                signal.connect(handler)
 
     # ------------------------------------------------------------------ #
     # Theming
@@ -256,7 +256,13 @@ class ChromeSectionMixin:
                 else binding.icon_path
             )
             color = self._icon_base_color
-            if button.isCheckable() and button.isChecked():
+            is_live_record = bool(
+                button.objectName() == "ProjectRecordButton"
+                and getattr(self, "_record_button_live", False)
+            )
+            if is_live_record:
+                color = QColor("#d64545")
+            elif button.isCheckable() and button.isChecked():
                 color = self._resolve_button_accent(button)
             elif binding.accent_on_checked and button.isChecked():
                 color = self._resolve_button_accent(button)

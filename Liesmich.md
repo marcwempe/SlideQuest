@@ -47,6 +47,9 @@ Weitere Hinweise:
 
 - **NavigationRail**: Startpunkt für Layout-, Audio-, Notes- und File-Ansichten (derzeit nur Layout aktiv); aktive Buttons behalten die Linksmarkierung.
 - **ProjectStatusBar**: Zeigt Logo + Projektnamen, Projektaktionen (Neu, Öffnen, Import, Export, Ordner öffnen, Papierkorb leeren) sowie den aktuellen Papierkorb-Füllstand.
+- Ein zusätzlicher Mikrofon-Button in der ProjectStatusBar startet ein Whisper-Live-Transkript pro aktiver Folie, legt die Rohaufnahme im Projekt-Unterordner `recordings/` ab und hängt das erzeugte Markdown automatisch an die Foliennotizen, sobald du die Folie wechselst.
+- Beim ersten Start fragt dich der Button nach einer Bestätigung, lädt anschließend das Whisper-Large-Modell (≈6 GB, empfohlen ≥10 GB VRAM) und zeigt dir den Fortschritt im Dialog an.
+- Nach Abschluss der Aufnahme läuft optional eine Sprecher-Diarisation (benötigt `PYANNOTE_TOKEN`); das Markdown wird dann mit Sprecherlabels überschrieben, während du während der Aufnahme bereits den Livetext sehen kannst.
 - **Explorer/Detail**: ExplorerHeader mit Suche + Filter, ExplorerFooter mit CRUD. DetailMain zeigt die Layout-Vorschau; DetailFooter enthält die horizontale Layout-Auswahl.
 - **PresentationWindow**: Wird über den unteren SymbolView-Button geöffnet; es darf nur eine Instanz gleichzeitig existieren.
 

@@ -9,7 +9,7 @@ run:
 dev:
 	rm -f $(DEV_LOG)
 	mkdir -p $(LOG_DIR)
-	QT_DEBUG_PLUGINS=1 UV_LOG=debug uv run slidequest-dev 2>&1 | tee $(DEV_LOG)
+	uv run slidequest-dev 2>&1 | tee $(DEV_LOG)
 	@echo "--- Logprüfung (\"error\") ---"
 	@if grep -qi "error" $(DEV_LOG); then \
 		echo "Fehlerhinweise gefunden. Siehe $(DEV_LOG)."; \

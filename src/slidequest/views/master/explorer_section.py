@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -123,6 +123,10 @@ class ExplorerSectionMixin:
         self._set_current_layout(layout_id, images)
         self._populate_playlist_tracks()
         self._update_slide_item_states()
+        self._handle_slide_selection_completed(slide)
+
+    def _handle_slide_selection_completed(self, _slide: SlideData | None) -> None:
+        return
 
     def _refresh_slide_widget(self, slide: SlideData) -> None:
         if not self._slide_list:

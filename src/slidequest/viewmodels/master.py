@@ -25,7 +25,14 @@ class MasterViewModel:
         project_service: ProjectStorageService | None = None,
     ) -> None:
         self._storage = storage
-        self._project_service = project_service or storage.project_service
+        resolved_service = project_service
+        if resolved_service is None:
+            resolved_service = getattr(
+                storage,
+                "project_service",
+                ProjectStorageService(),
+            )
+        self._project_service = resolved_service
         self._slides: list[SlideData] = storage.load_slides()
         for slide in self._slides:
             if slide.layout.content:
@@ -191,6 +198,19 @@ class MasterViewModel:
             self.persist()
             self._notify()
         return added
+
+    def attach_note_reference(self, slide_index: int, reference: str) -> bool:
+        if not reference:
+            return False
+        if not (0 <= slide_index < len(self._slides)):
+            return False
+        slide = self._slides[slide_index]
+        if reference in slide.notes.notebooks:
+            return False
+        slide.notes.notebooks.append(reference)
+        self.persist()
+        self._notify()
+        return True
 
     def remove_note_document(self, index: int) -> bool:
         slide = self.current_slide

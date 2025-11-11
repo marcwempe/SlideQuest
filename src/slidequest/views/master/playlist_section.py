@@ -643,6 +643,10 @@ class PlaylistSectionMixin:
         for idx in active_indices:
             self._toggle_playlist_track_button(idx, False)
         self._audio_context_reset_pending = True
+        self._handle_recording_before_slide_change()
+
+    def _handle_recording_before_slide_change(self) -> None:
+        return
 
     def _reset_playlist_track_progress(self, index: int) -> None:
         slider = self._playlist_seek_sliders.get(index)

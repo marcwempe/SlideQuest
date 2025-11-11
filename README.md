@@ -79,6 +79,9 @@ Slides live inside `<AppData>/SlideQuest/projects/<id>/project.json` alongside a
 
 - **NavigationRail** (left, formerly SymbolView) switches between Layout-, Audio-, Notes- und File-Subapps. Currently only Layout toggles the Explorer/Detail panes; the other launchers are placeholders for upcoming subapps.
 - **ProjectStatusBar** (top) shows logo + project title, project management actions (New/Open/Import/Export/Reveal/Prune) and a live indicator of how much disk space the project trash consumes.
+- The mic toggle inside the ProjectStatusBar starts a live Whisper transcription for the active slide, saves raw WAV files under `recordings/`, and injects the Markdown transcript into the slide's Notes whenever you switch slides.
+- On first use the mic button prompts you before downloading Whisper Large (~6 GB, ≥10 GB VRAM recommended) and shows a progress dialog so you can track the model installation.
+- Speaker diarization runs automatically after each recording (requires a `PYANNOTE_TOKEN` env var); once finished the Markdown is rewritten with speaker labels while the live view keeps streaming partial text.
 - **PresentationWindow** is hidden until explicitly launched via the window button anchored at the bottom of SymbolView. Only one presentation window exists at a time; once it closes, the launcher re-enables.
 
 ## Localization & Accessibility

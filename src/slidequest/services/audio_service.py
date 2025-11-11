@@ -67,6 +67,7 @@ class AudioService(QObject):
         ]
         for key in invalid_keys:
             self.stop(key.index)
+
         def prune_dict(source: dict[PlayerKey, object]) -> None:
             removable = [
                 key for key in source.keys() if key.context == self._active_context and key.index >= len(current_tracks)

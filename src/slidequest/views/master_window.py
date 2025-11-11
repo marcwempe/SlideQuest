@@ -1,23 +1,16 @@
 from __future__ import annotations
 
 import json
-import os
+import queue
 import shutil
 import tempfile
+import threading
 from pathlib import Path
-from typing import Callable, Iterable
 
-from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal, QEvent, QTimer, QObject, QUrl
-from PySide6.QtGui import (
-    QAction,
-    QColor,
-    QFont,
-    QIcon,
-    QMouseEvent,
-    QPalette,
-    QDesktopServices,
-)
+from PySide6.QtCore import Qt, QEvent, QTimer, QObject, QUrl
+from PySide6.QtGui import QAction, QIcon, QPalette, QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -27,6 +20,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QScrollArea,
     QSizePolicy,
     QSlider,
@@ -37,25 +31,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import SlideData
 from slidequest.services.project_service import ProjectStorageService
-from slidequest.services.storage import DATA_DIR, PROJECT_ROOT, THUMBNAIL_DIR, SlideStorage
+from slidequest.services.storage import SlideStorage
 from slidequest.services.audio_service import AudioService
+from slidequest.services.transcription_service import LiveTranscriptionService, RecordingResult
 from slidequest.ui.constants import (
     ACTION_ICONS,
-    DETAIL_FOOTER_HEIGHT,
     DETAIL_HEADER_HEIGHT,
     EXPLORER_CRUD_SPECS,
     EXPLORER_FOOTER_HEIGHT,
     EXPLORER_HEADER_HEIGHT,
-    PRESENTATION_BUTTON_SPEC,
     STATUS_BAR_SIZE,
-    STATUS_BUTTON_SPECS,
-    STATUS_ICON_SIZE,
     SYMBOL_BUTTON_SIZE,
-    SYMBOL_BUTTON_SPECS,
-    ButtonSpec,
 )
 from slidequest.utils.media import slugify
 from slidequest.viewmodels.master import MasterViewModel
@@ -66,15 +54,6 @@ from slidequest.views.master.chrome_section import ChromeSectionMixin
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import IconBinding
 from slidequest.views.widgets.layout_preview import LayoutPreviewCanvas, LayoutPreviewCard
-from slidequest.views.widgets.playlist_list import PlaylistListWidget
-from shiboken6 import Shiboken
-
-
-STATUS_VOLUME_BUTTONS = {
-    "StatusMuteButton",
-    "StatusVolumeDownButton",
-    "StatusVolumeUpButton",
-}
 
 
 class MasterWindow(
@@ -123,6 +102,16 @@ class MasterWindow(
         self._storage = SlideStorage(self._project_service)
         self._viewmodel = MasterViewModel(self._storage, project_service=self._project_service)
         self._viewmodel.add_listener(self._on_viewmodel_changed)
+        self._transcription_service = LiveTranscriptionService(self._project_service)
+        self._transcription_service.recording_failed.connect(self._handle_transcription_failure)
+        self._transcription_service.recording_completed.connect(self._handle_async_recording_completed)
+        self._transcription_service.transcript_updated.connect(self._handle_transcript_updated)
+        self._recording_enabled = False
+        self._pending_recording_restart = False
+        self._finalizing_recording = False
+        self._record_button: QToolButton | None = None
+        self._record_button_live = False
+        self._active_transcript_note: str | None = None
         self._slides: list[SlideData] = self._viewmodel.slides
         self._slide_list: QListWidget | None = None
         self._current_slide: SlideData | None = None
@@ -149,7 +138,6 @@ class MasterWindow(
             QTimer.singleShot(0, self._apply_splitter_sizes)
         return super().eventFilter(obj, event)
 
-
     def _setup_placeholder(self) -> None:
         central = QWidget(self)
         layout = QVBoxLayout(central)
@@ -161,6 +149,7 @@ class MasterWindow(
         status_bar.setFixedHeight(STATUS_BAR_SIZE)
         self._project_status_bar = status_bar
         self._build_status_bar(status_bar)
+        self._record_button = self._status_button_map.get("ProjectRecordButton")
 
         viewport = QFrame(central)
         viewport.setObjectName("AppViewport")
@@ -394,7 +383,6 @@ class MasterWindow(
         self._wire_symbol_launchers()
         self._wire_audio_service()
 
-
     def _on_viewmodel_changed(self) -> None:
         self._slides = self._viewmodel.slides
         self._populate_playlist_tracks()
@@ -544,11 +532,32 @@ class MasterWindow(
             shutil.rmtree(trash_dir, ignore_errors=True)
         self._update_trash_label()
 
-    def _update_project_title_label(self) -> None:
-        label = getattr(self, "_project_title_label", None)
-        if label is None:
-            return
-        label.setText(self._project_service.project_id or "SlideQuest")
+    def _handle_project_record_toggled(self, checked: bool) -> None:
+        if checked:
+            if not self._ensure_transcription_ready():
+                self._set_record_button_checked(False)
+                return
+            if not self._confirm_model_download_if_needed():
+                self._set_record_button_checked(False)
+                return
+            if self._current_slide is None:
+                self._show_transcription_message("Bitte wähle zuerst eine Folie aus.", error=True)
+                self._set_record_button_checked(False)
+                return
+            self._recording_enabled = True
+            self._pending_recording_restart = False
+            try:
+                self._start_recording_for_current_slide()
+            except RuntimeError as exc:
+                self._recording_enabled = False
+                self._set_record_button_checked(False)
+                self._show_transcription_message(str(exc), error=True)
+        else:
+            self._recording_enabled = False
+            self._pending_recording_restart = False
+            self._finalize_recording_session()
+            if not self._transcription_service.is_recording:
+                self._set_record_button_live(False)
 
     def _update_trash_label(self) -> None:
         label = getattr(self, "_trash_label", None)
@@ -570,6 +579,219 @@ class MasterWindow(
         self._populate_note_documents()
         self._update_project_title_label()
         self._update_trash_label()
+
+    def _ensure_transcription_ready(self) -> bool:
+        if self._transcription_service.is_available:
+            return True
+        self._show_transcription_message(
+            "Live-Transkription steht nicht zur Verfügung. Installiere numpy, sounddevice und faster-whisper.",
+            error=True,
+        )
+        return False
+
+    def _confirm_model_download_if_needed(self) -> bool:
+        if not self._transcription_service.requires_model_download:
+            return True
+        warning_text = (
+            "Das Whisper-Large-Modell muss einmalig heruntergeladen werden "
+            "(≈6 GB Download, empfohlen ≥10 GB Grafikspeicher/16 GB RAM). "
+            "Möchtest du den Download jetzt starten?"
+        )
+        result = QMessageBox.warning(
+            self,
+            "Whisper-Large herunterladen?",
+            warning_text,
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if result != QMessageBox.StandardButton.Ok:
+            return False
+        return self._download_model_with_progress()
+
+    def _download_model_with_progress(self) -> bool:
+        progress_dialog = QProgressDialog("Bereite Download vor …", "", 0, 100, self)
+        progress_dialog.setWindowTitle("Whisper-Large Download")
+        progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        progress_dialog.setCancelButton(None)
+        progress_dialog.setMinimumDuration(0)
+        progress_dialog.setValue(0)
+        progress_dialog.show()
+
+        updates: queue.Queue[tuple[str, object, object]] = queue.Queue()
+
+        def progress_callback(current: int, total: int) -> None:
+            updates.put(("progress", current, total))
+
+        def worker() -> None:
+            try:
+                self._transcription_service.download_model(progress_callback=progress_callback)
+                updates.put(("done", True, None))
+            except Exception as exc:
+                updates.put(("done", False, str(exc)))
+
+        download_thread = threading.Thread(target=worker, daemon=True)
+        download_thread.start()
+        success = False
+        error_message: str | None = None
+        finished = False
+        while not finished:
+            QApplication.processEvents()
+            try:
+                kind, value1, value2 = updates.get(timeout=0.05)
+            except queue.Empty:
+                if not download_thread.is_alive() and updates.empty():
+                    finished = True
+                continue
+            if kind == "progress":
+                current = int(value1)
+                total = int(value2) or 1
+                percent = int(current / max(1, total) * 100)
+                progress_dialog.setValue(percent)
+                current_mb = current / (1024 * 1024)
+                total_mb = total / (1024 * 1024)
+                progress_dialog.setLabelText(
+                    f"Lade Whisper Large … {current_mb:.1f} / {total_mb:.1f} MB"
+                )
+            elif kind == "done":
+                success = bool(value1)
+                error_message = value2 if isinstance(value2, str) else None
+                finished = True
+        download_thread.join(timeout=0.5)
+        progress_dialog.close()
+        if not success or self._transcription_service.requires_model_download:
+            self._show_transcription_message(
+                f"Das Whisper-Modell konnte nicht geladen werden.\n{error_message or ''}".strip(),
+                error=True,
+            )
+            return False
+        self._show_transcription_message("Whisper-Large wurde erfolgreich installiert.")
+        return True
+
+    def _prepare_live_transcript_note(self) -> tuple[str, str] | None:
+        slide = self._current_slide
+        if slide is None:
+            return None
+        title = slide.title or f"Folie {self._viewmodel.current_index + 1}"
+        header = f"# Live-Transkript – {title}\n\n"
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".md", encoding="utf-8") as handle:
+            handle.write(header)
+            tmp_path = Path(handle.name)
+        try:
+            relative = self._project_service.import_file("notes", str(tmp_path))
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        self._viewmodel.attach_note_reference(self._viewmodel.current_index, relative)
+        self._populate_note_documents(select_path=relative)
+        absolute = str(self._project_service.resolve_asset_path(relative))
+        return relative, absolute
+
+    def _start_recording_for_current_slide(self) -> None:
+        if not self._recording_enabled or self._current_slide is None:
+            return
+        index = self._viewmodel.current_index
+        if index < 0:
+            return
+        if (
+            self._transcription_service.is_recording
+            and self._transcription_service.current_slide_index == index
+        ):
+            return
+        title = self._current_slide.title or f"Folie {index + 1}"
+        note_refs = self._prepare_live_transcript_note()
+        if note_refs is None:
+            return
+        relative_note, absolute_note = note_refs
+        self._active_transcript_note = relative_note
+        self._transcription_service.start(index, title, transcript_path=absolute_note)
+        self._set_record_button_live(True)
+
+    def _finalize_recording_session(self, restart_after: bool = False) -> None:
+        self._pending_recording_restart = restart_after
+        if self._finalizing_recording:
+            return
+        self._finalizing_recording = True
+        self._transcription_service.stop_async()
+
+    def _apply_recording_result(self, result: RecordingResult | None) -> None:
+        if result is None or not result.transcript_path:
+            return
+        self._viewmodel.attach_note_reference(result.slide_index, result.transcript_path)
+        if self._viewmodel.current_index == result.slide_index:
+            self._populate_note_documents(select_path=result.transcript_path)
+
+    def _handle_async_recording_completed(self, result: RecordingResult | None) -> None:
+        self._finalizing_recording = False
+        self._apply_recording_result(result)
+        restart = self._pending_recording_restart
+        self._pending_recording_restart = False
+        if restart and self._recording_enabled:
+            try:
+                self._start_recording_for_current_slide()
+            except RuntimeError as exc:
+                self._show_transcription_message(str(exc), error=True)
+                self._recording_enabled = False
+                self._set_record_button_live(False)
+                self._set_record_button_checked(False)
+        else:
+            self._set_record_button_live(False)
+        self._active_transcript_note = None
+
+    def _handle_recording_before_slide_change(self) -> None:  # type: ignore[override]
+        if not self._recording_enabled:
+            return
+        self._finalize_recording_session(restart_after=True)
+
+    def _handle_slide_selection_completed(self, slide: SlideData | None) -> None:  # type: ignore[override]
+        if not self._recording_enabled or slide is None:
+            return
+        if self._pending_recording_restart or not self._transcription_service.is_recording:
+            try:
+                self._start_recording_for_current_slide()
+            except RuntimeError as exc:
+                self._show_transcription_message(str(exc), error=True)
+                self._recording_enabled = False
+                self._set_record_button_checked(False)
+        self._pending_recording_restart = False
+
+    def _handle_transcription_failure(self, message: str) -> None:
+        self._pending_recording_restart = False
+        self._finalizing_recording = True
+        self._transcription_service.stop_async()
+        self._recording_enabled = False
+        self._pending_recording_restart = False
+        self._set_record_button_live(False)
+        self._set_record_button_checked(False)
+        if message:
+            self._show_transcription_message(message, error=True)
+        self._active_transcript_note = None
+
+    def _set_record_button_checked(self, checked: bool) -> None:
+        button = self._record_button or self._status_button_map.get("ProjectRecordButton")
+        if button is None or button.isChecked() == checked:
+            return
+        button.blockSignals(True)
+        button.setChecked(checked)
+        button.blockSignals(False)
+
+    def _set_record_button_live(self, live: bool) -> None:
+        if self._record_button_live == live:
+            return
+        self._record_button_live = live
+        self._update_icon_colors()
+
+    def _show_transcription_message(self, message: str, *, error: bool = False) -> None:
+        text = message or "Live-Transkription fehlgeschlagen."
+        if error:
+            QMessageBox.warning(self, "Live-Transkription", text)
+        else:
+            QMessageBox.information(self, "Live-Transkription", text)
+
+    def _handle_transcript_updated(self, slide_index: int, _text: str) -> None:
+        if self._active_transcript_note is None:
+            return
+        if slide_index != self._viewmodel.current_index:
+            return
+        self._load_note_document(self._active_transcript_note)
 
     def _update_project_title_label(self) -> None:
         label = getattr(self, "_project_title_label", None)
@@ -675,7 +897,6 @@ class MasterWindow(
         if vol_up := buttons.get("StatusVolumeUpButton"):
             vol_up.clicked.connect(lambda: adjust(5))
 
-
     @staticmethod
     def _format_time(seconds: float) -> str:
         if seconds <= 0:
@@ -683,9 +904,6 @@ class MasterWindow(
         minutes = int(seconds) // 60
         remainder = int(seconds) % 60
         return f"{minutes:02d}:{remainder:02d}"
-
-
-
 
     def _show_presentation_window(self) -> None:
         window = self._presentation_window

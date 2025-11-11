@@ -10,12 +10,33 @@ requires-python = ">=3.12"
 dependencies = [
     "PySide6>=6.7,<7",
     "watchfiles>=0.21",
+    "numpy>=1.26",
+    "sounddevice>=0.4",
+    "faster-whisper>=1.0",
+    "huggingface-hub>=0.23",
+    "webrtcvad>=2.0",
+    "pyannote.audio>=3.1",
 ]
 
 [dependency-groups]
 dev = [
     "flake8>=7.0",
     "pytest>=8.0",
+]
+
+[tool.flake8]
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "./.venv",
+    "*/.venv/*",
+    "build",
+    "dist",
+]
+max-line-length = 150
+extend-ignore = [
+    "E203",
 ]
 
 [project.scripts]
