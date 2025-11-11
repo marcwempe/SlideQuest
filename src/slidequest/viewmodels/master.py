@@ -199,6 +199,97 @@ class MasterViewModel:
             self._notify()
         return added
 
+    def note_display_name(self, reference: str) -> str:
+        stored = self._project_service.note_title(reference)
+        if stored:
+            return stored
+        title = self._derive_note_title(reference)
+        if title:
+            self._project_service.set_note_title(reference, title)
+        return title or Path(reference).stem
+
+    def update_note_title_from_content(self, reference: str, content: str) -> str:
+        title = self._derive_title_from_text(content, reference)
+        current = self._project_service.note_title(reference)
+        if title and title != current:
+            self._project_service.set_note_title(reference, title)
+        return title or current or Path(reference).stem
+
+    def _derive_note_title(self, reference: str) -> str:
+        absolute = self._project_service.resolve_asset_path(reference)
+        if absolute.exists():
+            try:
+                text = absolute.read_text(encoding="utf-8")
+                return self._derive_title_from_text(text, reference)
+            except OSError:
+                pass
+        return self._derive_title_from_text("", reference)
+
+    @staticmethod
+    def _derive_title_from_text(content: str, reference: str) -> str:
+        candidate = ""
+        for line in content.splitlines():
+            clean = line.strip("# ").strip()
+            if clean:
+                candidate = clean
+                break
+        if not candidate:
+            candidate = Path(reference).stem
+        normalized = candidate.replace(" ", "_")
+        return normalized[:40]
+
+    def remove_note_document_by_path(self, reference: str, *, delete_file: bool = True) -> bool:
+        slide = self.current_slide
+        if slide is None or not slide.notes.notebooks:
+            return False
+        target_index: int | None = None
+        for idx, entry in enumerate(slide.notes.notebooks):
+            if entry == reference:
+                target_index = idx
+                break
+            abs_entry = self._project_service.resolve_asset_path(entry)
+            if abs_entry.as_posix() == reference:
+                target_index = idx
+                reference = entry
+                break
+        if target_index is None:
+            return False
+        stored = slide.notes.notebooks.pop(target_index)
+        if delete_file:
+            absolute = self._project_service.resolve_asset_path(stored)
+            absolute.unlink(missing_ok=True)
+        self.persist()
+        self._notify()
+        return True
+
+    def prune_missing_note_documents(self) -> bool:
+        slide = self.current_slide
+        if slide is None or not slide.notes.notebooks:
+            return False
+        changed = False
+        for entry in list(slide.notes.notebooks):
+            absolute = self._project_service.resolve_asset_path(entry)
+            if absolute.exists():
+                continue
+            slide.notes.notebooks.remove(entry)
+            changed = True
+        if changed:
+            self.persist()
+            self._notify()
+        return changed
+
+    def reorder_note_documents(self, ordered_refs: list[str]) -> None:
+        slide = self.current_slide
+        if slide is None or not ordered_refs:
+            return
+        if len(ordered_refs) != len(slide.notes.notebooks):
+            return
+        if set(ordered_refs) != set(slide.notes.notebooks):
+            return
+        slide.notes.notebooks = ordered_refs
+        self.persist()
+        self._notify()
+
     def attach_note_reference(self, slide_index: int, reference: str) -> bool:
         if not reference:
             return False

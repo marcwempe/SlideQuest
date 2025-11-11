@@ -5,12 +5,14 @@ from pathlib import Path
 import tempfile
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextListFormat, QTextFormat
+from PySide6.QtGui import QFont, QIcon, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextListFormat, QTextFormat
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
+    QMessageBox,
+    QSplitter,
     QStackedWidget,
     QTextEdit,
     QToolButton,
@@ -52,6 +54,11 @@ class NotesSectionMixin:
         self._note_current_type: str = ""
         self._note_dirty = False
         self._note_default_font_size = 12.0
+        self._note_splitter: QSplitter | None = None
+        self._note_sidebar: QWidget | None = None
+        self._note_sidebar_toggle: QToolButton | None = None
+        self._note_sidebar_visible = True
+        self._note_sidebar_last_sizes: list[int] = []
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -70,6 +77,15 @@ class NotesSectionMixin:
         header_layout.setContentsMargins(12, 6, 12, 6)
         header_layout.setSpacing(8)
         self._build_notes_header_controls(header_layout)
+        sidebar_toggle = self._create_icon_button(
+            header,
+            "NotesSidebarToggleButton",
+            ACTION_ICONS["collapse"],
+            "Notizliste ein-/ausblenden",
+        )
+        sidebar_toggle.clicked.connect(self._toggle_note_sidebar)
+        header_layout.addWidget(sidebar_toggle, 0, Qt.AlignmentFlag.AlignRight)
+        self._note_sidebar_toggle = sidebar_toggle
 
         renderer_stack = QStackedWidget(view)
         renderer_stack.setObjectName("NotesRendererStack")
@@ -117,15 +133,51 @@ class NotesSectionMixin:
         footer_layout.setSpacing(4)
 
         doc_list = DocumentListWidget(footer)
-        doc_list.setFixedHeight(DETAIL_FOOTER_HEIGHT - 12)
+        doc_list.setMinimumHeight(DETAIL_FOOTER_HEIGHT + 80)
         doc_list.filesDropped.connect(self._handle_note_files_dropped)
         doc_list.currentRowChanged.connect(self._handle_note_selection_changed)
+        doc_list.orderChanged.connect(self._handle_note_order_changed)
         footer_layout.addWidget(doc_list)
         self._note_document_list = doc_list
 
         layout.addWidget(header)
-        layout.addWidget(renderer_stack, 1)
-        layout.addWidget(footer)
+        splitter = QSplitter(Qt.Orientation.Horizontal, view)
+        splitter.setObjectName("NotesContentSplitter")
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(8)
+        self._note_splitter = splitter
+        layout.addWidget(splitter, 1)
+
+        main_container = QFrame(splitter)
+        main_container.setObjectName("NotesMainContainer")
+        main_layout = QVBoxLayout(main_container)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        main_layout.addWidget(renderer_stack, 1)
+        main_layout.addWidget(QFrame(main_container), 0)
+
+        sidebar = QFrame(splitter)
+        sidebar.setObjectName("NotesSidebar")
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(10, 10, 10, 10)
+        sidebar_layout.setSpacing(8)
+        self._note_sidebar = sidebar
+        sidebar.setMinimumWidth(260)
+
+        sidebar_header = QLabel("Dokumente", sidebar)
+        sidebar_header.setObjectName("NoteSidebarTitle")
+        sidebar_layout.addWidget(sidebar_header)
+
+        doc_list = DocumentListWidget(sidebar)
+        doc_list.filesDropped.connect(self._handle_note_files_dropped)
+        doc_list.currentRowChanged.connect(self._handle_note_selection_changed)
+        doc_list.orderChanged.connect(self._handle_note_order_changed)
+        sidebar_layout.addWidget(doc_list, 1)
+        self._note_document_list = doc_list
+
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        self._note_sidebar_last_sizes = splitter.sizes()
 
         self._populate_note_documents()
         return view
@@ -197,21 +249,29 @@ class NotesSectionMixin:
         if self._note_document_list is None:
             return
         self._commit_note_changes_if_needed()
+        self._viewmodel.prune_missing_note_documents()
         documents = self._viewmodel.note_documents()
         current_selection = select_path or self._note_current_path
         self._note_document_list.blockSignals(True)
         self._note_document_list.clear()
         for index, path in enumerate(documents):
-            name = Path(path).name or f"Notiz {index + 1}"
-            item = QListWidgetItem(name, self._note_document_list)
-            item.setToolTip(path)
+            absolute = self._resolve_note_path(path)
+            if not absolute.exists():
+                self._viewmodel.remove_note_document_by_path(path, delete_file=False)
+                continue
+            item = QListWidgetItem("", self._note_document_list)
+            item.setToolTip(absolute.name)
             item.setData(Qt.ItemDataRole.UserRole, path)
+            widget = self._create_note_card_widget(path, absolute)
+            item.setSizeHint(widget.sizeHint())
             self._note_document_list.addItem(item)
+            self._note_document_list.setItemWidget(item, widget)
             if path == current_selection:
                 self._note_document_list.setCurrentItem(item)
         self._note_document_list.blockSignals(False)
         if documents:
             if current_selection and current_selection in documents:
+                self._note_document_list.setCurrentRow(documents.index(current_selection))
                 self._load_note_document(current_selection)
             else:
                 self._note_document_list.setCurrentRow(0)
@@ -220,6 +280,7 @@ class NotesSectionMixin:
             self._note_current_path = None
             self._note_current_type = ""
             self._show_note_placeholder("Noch kein Dokument vorhanden.")
+        self._update_note_card_states()
 
     def _handle_note_files_dropped(self, paths: list[str]) -> None:
         if not paths:
@@ -230,6 +291,37 @@ class NotesSectionMixin:
         added = self._viewmodel.add_note_documents(supported)
         if added:
             self._populate_note_documents(select_path=added[-1])
+
+    def _handle_note_item_delete(self, path: str) -> None:
+        if not path:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Dokument löschen",
+            "Möchtest du dieses Dokument endgültig löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        if self._viewmodel.remove_note_document_by_path(path):
+            if self._note_current_path == path:
+                self._note_current_path = None
+                self._note_current_type = ""
+                self._show_note_placeholder("Dokument gelöscht.")
+            self._populate_note_documents()
+
+    def _handle_note_order_changed(self) -> None:
+        if self._note_document_list is None:
+            return
+        ordered_refs: list[str] = []
+        for row in range(self._note_document_list.count()):
+            item = self._note_document_list.item(row)
+            reference = item.data(Qt.ItemDataRole.UserRole)
+            if reference:
+                ordered_refs.append(str(reference))
+        if ordered_refs:
+            self._viewmodel.reorder_note_documents(ordered_refs)
+            self._populate_note_documents(select_path=self._note_current_path)
 
     def _handle_note_selection_changed(self, row: int) -> None:
         if self._note_document_list is None:
@@ -246,6 +338,7 @@ class NotesSectionMixin:
         if not path:
             return
         self._load_note_document(str(path))
+        self._update_note_card_states()
 
     def _load_note_document(self, path: str) -> None:
         renderer = self._note_renderer_stack
@@ -308,6 +401,135 @@ class NotesSectionMixin:
         self._update_editor_toolbar_state(markdown_active=False)
         self._update_note_header_label("Kein Dokument", dirty=False)
 
+    def _create_note_card_widget(self, path: str, absolute: Path) -> QWidget:
+        card = QFrame()
+        card.setObjectName("NoteDocumentCard")
+        card.setProperty("selected", False)
+        card.setStyleSheet(
+            """
+            QFrame#NoteDocumentCard {
+                border: 1px solid rgba(255, 255, 255, 30);
+                border-radius: 10px;
+                background-color: rgba(255, 255, 255, 18);
+            }
+            QFrame#NoteDocumentCard[selected="true"] {
+                border: 1px solid palette(Highlight);
+                background-color: rgba(255, 255, 255, 35);
+            }
+            """
+        )
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+
+        card.setProperty("note_path", path)
+        display_name = self._viewmodel.note_display_name(path)
+        title = QLabel(display_name, card)
+        title_font = QFont(title.font())
+        title_font.setBold(True)
+        title.setFont(title_font)
+        title.setObjectName("NoteDocumentTitle")
+        header_layout.addWidget(title, 1)
+
+        delete_button = QToolButton(card)
+        delete_button.setIcon(QIcon(str(ACTION_ICONS["delete"])))
+        delete_button.setToolTip("Dokument löschen")
+        delete_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        delete_button.setAutoRaise(True)
+        delete_button.clicked.connect(lambda: self._handle_note_item_delete(path))
+        header_layout.addWidget(delete_button, 0, Qt.AlignmentFlag.AlignRight)
+
+        layout.addLayout(header_layout)
+
+        meta = QLabel(self._format_note_meta(absolute), card)
+        meta_font = QFont(meta.font())
+        meta_font.setPointSizeF(meta_font.pointSizeF() - 1)
+        meta.setFont(meta_font)
+        meta.setObjectName("NoteDocumentMeta")
+        layout.addWidget(meta)
+
+        def handle_press(event) -> None:
+            self._select_note_by_path(path)
+            QFrame.mousePressEvent(card, event)
+
+        card.mousePressEvent = handle_press  # type: ignore[assignment]
+        return card
+
+    def _format_note_meta(self, absolute: Path) -> str:
+        suffix = (absolute.suffix or "").upper().lstrip(".") or "TEXT"
+        try:
+            stats = absolute.stat()
+            timestamp = datetime.fromtimestamp(stats.st_mtime).strftime("%d.%m.%Y %H:%M")
+            size = stats.st_size / 1024
+            return f"{suffix} • {timestamp} • {size:.0f} KB"
+        except OSError:
+            return suffix
+
+    def _select_note_by_path(self, path: str) -> None:
+        if self._note_document_list is None:
+            return
+        for row in range(self._note_document_list.count()):
+            item = self._note_document_list.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == path:
+                self._note_document_list.setCurrentRow(row)
+                break
+
+    def _update_note_card_states(self) -> None:
+        if self._note_document_list is None:
+            return
+        current_item = self._note_document_list.currentItem()
+        for row in range(self._note_document_list.count()):
+            item = self._note_document_list.item(row)
+            widget = self._note_document_list.itemWidget(item)
+            if widget is None:
+                continue
+            widget.setProperty("selected", item is current_item)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self._update_note_card_titles()
+
+    def _update_note_card_titles(self) -> None:
+        if self._note_document_list is None:
+            return
+        for row in range(self._note_document_list.count()):
+            item = self._note_document_list.item(row)
+            path = item.data(Qt.ItemDataRole.UserRole)
+            if not path:
+                continue
+            widget = self._note_document_list.itemWidget(item)
+            if widget is None:
+                continue
+            title_label = widget.findChild(QLabel, "NoteDocumentTitle")
+            if title_label is None:
+                continue
+            title_label.setText(self._viewmodel.note_display_name(str(path)))
+
+    def _toggle_note_sidebar(self) -> None:
+        splitter = self._note_splitter
+        sidebar = self._note_sidebar
+        toggle = self._note_sidebar_toggle
+        if splitter is None or sidebar is None or toggle is None:
+            return
+        sizes = splitter.sizes()
+        if self._note_sidebar_visible:
+            self._note_sidebar_last_sizes = sizes
+            sidebar.hide()
+            splitter.setSizes([sum(sizes), 0])
+            self._note_sidebar_visible = False
+            toggle.setToolTip("Notizliste einblenden")
+        else:
+            sidebar.show()
+            if self._note_sidebar_last_sizes and len(self._note_sidebar_last_sizes) == 2:
+                splitter.setSizes(self._note_sidebar_last_sizes)
+            else:
+                splitter.setSizes([sizes[0], max(200, sizes[0] // 3)])
+            self._note_sidebar_visible = True
+            toggle.setToolTip("Notizliste ausblenden")
+
     def _show_note_error(self, message: str) -> None:
         if self._note_renderer_stack is None or self._note_error_label is None:
             return
@@ -349,6 +571,10 @@ class NotesSectionMixin:
         if self._note_active_file_label is not None and self._note_current_path:
             self._update_note_header_label(Path(self._note_current_path).name, dirty=True)
         self._update_editor_toolbar_state(markdown_active=True)
+        if self._note_current_path and self._note_editor is not None:
+            content = self._note_editor.toPlainText()
+            self._viewmodel.update_note_title_from_content(self._note_current_path, content)
+            self._update_note_card_titles()
 
     def _toggle_text_format(self, mode: str) -> None:
         editor = self._note_editor

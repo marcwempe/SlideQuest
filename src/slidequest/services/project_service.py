@@ -154,6 +154,27 @@ class ProjectStorageService:
         self.save_project(project)
         return relative_path.as_posix()
 
+    def set_note_title(self, relative_path: str, title: str) -> None:
+        project = self.load_project()
+        updated = False
+        for info in project.get("files", {}).values():
+            if info.get("path") == relative_path:
+                if title:
+                    info["note_title"] = title
+                else:
+                    info.pop("note_title", None)
+                updated = True
+                break
+        if updated:
+            self.save_project(project)
+
+    def note_title(self, relative_path: str) -> str:
+        project = self.load_project()
+        for info in project.get("files", {}).values():
+            if info.get("path") == relative_path:
+                return info.get("note_title") or ""
+        return ""
+
     def trash_path(self) -> Path:
         path = self.project_dir / ".trash"
         path.mkdir(parents=True, exist_ok=True)

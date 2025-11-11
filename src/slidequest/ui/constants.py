@@ -56,6 +56,7 @@ ACTION_ICONS = {
     "heading_3": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-h3.svg",
     "clear": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-clear.svg",
     "microphone": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "audio" / "mic.svg",
+    "collapse": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "sort-down.svg",
 }
 
 SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
