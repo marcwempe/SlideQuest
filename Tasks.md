@@ -14,6 +14,7 @@ Append new tasks at the top so the most recent priorities stay visible. Remove b
   - KI-Unterstützungsbutton in Navigation inkl. Bootstrap-Icon & API-Key-Handling (.env oder Dialog)
   - Seedance-Steuerung im Detailbereich basierend auf docs/assets/thirdparty/replicate (Prompts, Einstellungen, Start/Status)
   - Storage-Bereich + rechter Drawer für generierte Bilder inkl. Drag&Drop in Layoutflächen
+  - Bild-zu-Bild-Unterstützung inkl. Referenzbild-Verwaltung und Seedream Parameterübergabe
 - Token-basierte Layout-Dekoration
   - Token-Leiste im Layout-Header einbauen (Bild + Overlay + Opacity-Map pro Token, Drag&Drop zum Befüllen)
   - Tokens per Drag&Drop auf Preview/Presentation platzieren, inkl. persistenter Position/Skalierung pro Slide

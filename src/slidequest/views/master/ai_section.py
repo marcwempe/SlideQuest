@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from __future__ import annotations
+
+import base64
+import mimetypes
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QSize, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -12,6 +16,9 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QFileDialog,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -21,10 +28,11 @@ from PySide6.QtWidgets import (
     QWidget,
     QInputDialog,
     QLineEdit,
+    QSizePolicy,
 )
 
 from slidequest.services.replicate_service import ReplicateService
-from slidequest.ui.constants import ACTION_ICONS
+from slidequest.ui.constants import ACTION_ICONS, DETAIL_HEADER_HEIGHT
 from slidequest.views.widgets.replicate_gallery import ReplicateGalleryWidget
 
 
@@ -48,8 +56,11 @@ class AISectionMixin:
         self._ai_drawer: QFrame | None = None
         self._ai_drawer_toggle: QToolButton | None = None
         self._ai_drawer_expanded = 160
-        self._ai_drawer_thumb = QSize(112, 112)
+        self._ai_drawer_thumb = QSize(144, 81)  # approx. 16:9 thumbnail
         self._ai_request_meta: dict[str, dict[str, Any]] = {}
+        self._ai_reference_images: list[str] = []
+        self._ai_reference_list: _ReferenceImageList | None = None
+        self._ai_reference_placeholder: QLabel | None = None
 
     # ------------------------------------------------------------------ #
     # Service wiring
@@ -75,68 +86,18 @@ class AISectionMixin:
 
         header = QFrame(view)
         header.setObjectName("AISeedreamHeader")
+        header.setFixedHeight(DETAIL_HEADER_HEIGHT + 36)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
-        header_layout.setSpacing(8)
-        title = QLabel("Seedream 4 – Replicate Integration", header)
-        title.setObjectName("AISeedreamTitle")
-        title.setStyleSheet("font-weight: 600; letter-spacing: 0.4px;")
-        header_layout.addWidget(title, 1)
-        layout.addWidget(header)
+        header_layout.setContentsMargins(12, 6, 12, 6)
+        header_layout.setSpacing(12)
 
-        prompt = QTextEdit(view)
-        prompt.setObjectName("AISeedreamPrompt")
-        prompt.setPlaceholderText("Beschreibe die gewünschte Szene …")
-        prompt.setFixedHeight(140)
-        prompt.setStyleSheet(
-            """
-            QTextEdit#AISeedreamPrompt {
-                background-color: rgba(255, 255, 255, 0.03);
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 12px;
-                padding: 10px 12px;
-                font-size: 13px;
-            }
-            QTextEdit#AISeedreamPrompt:focus {
-                border-color: rgba(120, 190, 255, 0.9);
-            }
-            """
-        )
-        self._ai_prompt_input = prompt
-        layout.addWidget(prompt)
-        layout.addSpacing(8)
-
-        controls = QFrame(view)
+        controls = QFrame(header)
         controls.setObjectName("AISeedreamControls")
         controls_layout = QGridLayout(controls)
-        controls_layout.setContentsMargins(12, 12, 12, 12)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setHorizontalSpacing(12)
-        controls_layout.setVerticalSpacing(12)
-        controls.setStyleSheet(
-            """
-            QFrame#AISeedreamControls {
-                background-color: rgba(255, 255, 255, 0.02);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 14px;
-            }
-            QComboBox[aiControl="true"],
-            QSpinBox[aiControl="true"] {
-                background-color: rgba(0, 0, 0, 0.35);
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 8px;
-                padding: 4px 10px;
-                color: rgba(255, 255, 255, 0.9);
-                min-height: 30px;
-            }
-            QComboBox[aiControl="true"]:focus,
-            QSpinBox[aiControl="true"]:focus {
-                border-color: rgba(120, 190, 255, 0.85);
-            }
-            QCheckBox#AISeedreamEnhance {
-                color: rgba(255, 255, 255, 0.85);
-            }
-            """
-        )
+        controls_layout.setVerticalSpacing(10)
+        header_layout.addWidget(controls, 1)
 
         size_combo = QComboBox(controls)
         size_combo.addItem("1K (1024 px)", "1K")
@@ -147,7 +108,9 @@ class AISectionMixin:
         size_combo.currentIndexChanged.connect(self._handle_ai_size_mode_changed)
         self._ai_size_combo = size_combo
         size_combo.setProperty("aiControl", True)
-        controls_layout.addWidget(QLabel("Auflösung", controls), 0, 0)
+        label = QLabel("Auflösung", controls)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        controls_layout.addWidget(label, 0, 0)
         controls_layout.addWidget(size_combo, 0, 1)
 
         aspect_combo = QComboBox(controls)
@@ -157,10 +120,13 @@ class AISectionMixin:
         aspect_combo.addItem("3:2", "3:2")
         aspect_combo.addItem("16:9", "16:9")
         aspect_combo.addItem("9:16", "9:16")
+        aspect_combo.setCurrentIndex(4)
         self._ai_aspect_combo = aspect_combo
         aspect_combo.setProperty("aiControl", True)
-        controls_layout.addWidget(QLabel("Seitenverhältnis", controls), 1, 0)
-        controls_layout.addWidget(aspect_combo, 1, 1)
+        label = QLabel("Seitenverhältnis", controls)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        controls_layout.addWidget(label, 0, 2)
+        controls_layout.addWidget(aspect_combo, 0, 3)
 
         width_spin = QSpinBox(controls)
         width_spin.setRange(1024, 4096)
@@ -169,8 +135,10 @@ class AISectionMixin:
         width_spin.setEnabled(False)
         self._ai_width_spin = width_spin
         width_spin.setProperty("aiControl", True)
-        controls_layout.addWidget(QLabel("Breite (Custom)", controls), 0, 2)
-        controls_layout.addWidget(width_spin, 0, 3)
+        label = QLabel("Breite (Custom)", controls)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        controls_layout.addWidget(label, 1, 0)
+        controls_layout.addWidget(width_spin, 1, 1)
 
         height_spin = QSpinBox(controls)
         height_spin.setRange(1024, 4096)
@@ -179,7 +147,9 @@ class AISectionMixin:
         height_spin.setEnabled(False)
         self._ai_height_spin = height_spin
         height_spin.setProperty("aiControl", True)
-        controls_layout.addWidget(QLabel("Höhe (Custom)", controls), 1, 2)
+        label = QLabel("Höhe (Custom)", controls)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        controls_layout.addWidget(label, 1, 2)
         controls_layout.addWidget(height_spin, 1, 3)
 
         max_spin = QSpinBox(controls)
@@ -187,7 +157,9 @@ class AISectionMixin:
         max_spin.setValue(1)
         self._ai_max_images_spin = max_spin
         max_spin.setProperty("aiControl", True)
-        controls_layout.addWidget(QLabel("Anzahl Bilder", controls), 2, 0)
+        label = QLabel("Anzahl Bilder", controls)
+        label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        controls_layout.addWidget(label, 2, 0)
         controls_layout.addWidget(max_spin, 2, 1)
 
         enhance_check = QCheckBox("Prompt verbessern", controls)
@@ -195,9 +167,28 @@ class AISectionMixin:
         enhance_check.setObjectName("AISeedreamEnhance")
         self._ai_enhance_check = enhance_check
         controls_layout.addWidget(enhance_check, 2, 2, 1, 2)
+        layout.addWidget(header)
 
-        generate_button = QPushButton("Seedream Bild generieren", controls)
+        main = QFrame(view)
+        main.setObjectName("AISeedreamMain")
+        main_layout = QVBoxLayout(main)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
+
+        prompt = QTextEdit(main)
+        prompt.setObjectName("AISeedreamPrompt")
+        prompt.setPlaceholderText("Beschreibe die gewünschte Szene …")
+        prompt.setFixedHeight(140)
+        self._ai_prompt_input = prompt
+        main_layout.addWidget(prompt)
+
+        reference_panel = self._build_reference_panel(main)
+        reference_panel.setFixedHeight(prompt.height())
+        main_layout.addWidget(reference_panel)
+
+        generate_button = QPushButton("Seedream Bild generieren", main)
         generate_button.setObjectName("AISeedreamGenerateButton")
+        generate_button.setMinimumHeight(44)
         generate_button.setCursor(Qt.CursorShape.PointingHandCursor)
         generate_button.setStyleSheet(
             """
@@ -223,31 +214,24 @@ class AISectionMixin:
         )
         generate_button.clicked.connect(self._handle_ai_generate_clicked)
         self._ai_generate_button = generate_button
-        controls_layout.addWidget(generate_button, 3, 0, 1, 4)
-        controls_layout.setRowStretch(4, 1)
+        main_layout.addWidget(generate_button)
+        main_layout.addStretch(1)
+        layout.addWidget(main, 1)
 
-        layout.addWidget(controls)
+        self._ai_status_label = None
 
-        status_label = QLabel("Bereit.", view)
-        status_label.setObjectName("AISeedreamStatus")
-        status_label.setContentsMargins(12, 4, 12, 8)
-        status_label.setStyleSheet(
-            """
-            QLabel#AISeedreamStatus {
-                color: rgba(255, 255, 255, 0.75);
-                font-size: 12px;
-                letter-spacing: 0.3px;
-            }
-            """
-        )
-        self._ai_status_label = status_label
-        layout.addWidget(status_label)
+        footer = QFrame(view)
+        footer.setObjectName("AISeedreamFooter")
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(12, 12, 12, 12)
+        footer_layout.setSpacing(8)
 
-        gallery = ReplicateGalleryWidget(view, show_labels=False, thumbnail=QSize(160, 160))
-        gallery.setIconSize(QSize(160, 160))
+        gallery = ReplicateGalleryWidget(footer, show_labels=False, thumbnail=QSize(192, 108))
+        gallery.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
         gallery.entryActivated.connect(self._handle_ai_gallery_entry_activated)
         self._ai_gallery = gallery
-        layout.addWidget(gallery, 1)
+        footer_layout.addWidget(gallery)
+        layout.addWidget(footer)
         return view
 
     # ------------------------------------------------------------------ #
@@ -367,6 +351,7 @@ class AISectionMixin:
             height = self._ai_height_spin.value() if self._ai_height_spin else 2048
             enhance = self._ai_enhance_check.isChecked() if self._ai_enhance_check else True
             max_images = self._ai_max_images_spin.value() if self._ai_max_images_spin else 1
+            image_inputs = self._encode_reference_images()
             request_id = service.generate_seedream(
                 prompt=prompt,
                 aspect_ratio=aspect,
@@ -375,7 +360,7 @@ class AISectionMixin:
                 height=height,
                 enhance_prompt=enhance,
                 max_images=max_images,
-                image_inputs=[],
+                image_inputs=image_inputs,
             )
         except Exception as exc:
             QMessageBox.warning(self, "Seedream", str(exc))
@@ -434,8 +419,7 @@ class AISectionMixin:
     # Helpers
     # ------------------------------------------------------------------ #
     def _set_ai_status(self, message: str) -> None:
-        if self._ai_status_label is not None:
-            self._ai_status_label.setText(message)
+        return
 
     def _apply_ai_busy_state(self, busy: bool) -> None:
         if self._ai_generate_button is not None:
@@ -467,3 +451,205 @@ class AISectionMixin:
             return False
         service.set_api_token(token.strip())
         return service.has_api_token()
+
+    def _handle_ai_reference_add_clicked(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Referenzbilder auswählen",
+            "",
+            "Bilder (*.png *.jpg *.jpeg *.webp *.bmp *.tiff)",
+        )
+        if not paths:
+            return
+        self._import_reference_images(paths)
+
+    def _handle_ai_reference_remove_clicked(self) -> None:
+        list_widget = self._ai_reference_list
+        if list_widget is None:
+            return
+        indexes = [item.data(Qt.ItemDataRole.UserRole) for item in list_widget.selectedItems()]
+        removed = False
+        for entry_id in indexes:
+            if isinstance(entry_id, str) and entry_id in self._ai_reference_images:
+                self._ai_reference_images.remove(entry_id)
+                removed = True
+        if removed:
+            self._refresh_reference_list()
+
+    def _handle_ai_reference_item_double_clicked(self, item: QListWidgetItem) -> None:
+        entry_id = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(entry_id, str) and entry_id in self._ai_reference_images:
+            self._ai_reference_images.remove(entry_id)
+            self._refresh_reference_list()
+
+    def _handle_ai_reference_files_dropped(self, paths: list[str]) -> None:
+        if paths:
+            self._import_reference_images(paths)
+
+    def _import_reference_images(self, paths: list[str]) -> None:
+        added = False
+        for raw in paths:
+            source = raw[7:] if raw.startswith("file://") else raw
+            file_path = Path(source)
+            if not file_path.exists():
+                continue
+            try:
+                stored = self._project_service.import_file("replicate", str(file_path))
+            except FileNotFoundError:
+                continue
+            if stored in self._ai_reference_images:
+                continue
+            self._ai_reference_images.append(stored)
+            added = True
+        if added:
+            self._refresh_reference_list()
+
+    def _refresh_reference_list(self) -> None:
+        list_widget = self._ai_reference_list
+        placeholder = self._ai_reference_placeholder
+        if list_widget is None:
+            return
+        list_widget.clear()
+        for path in self._ai_reference_images:
+            absolute = self._project_service.resolve_asset_path(path)
+            pixmap = QPixmap(str(absolute))
+            if pixmap.isNull():
+                continue
+            icon = QIcon(
+                pixmap.scaled(
+                    list_widget.iconSize(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            item = QListWidgetItem(icon, "")
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setSizeHint(list_widget.iconSize())
+            list_widget.addItem(item)
+        if placeholder is not None:
+            placeholder.setVisible(list_widget.count() == 0)
+        list_widget.setVisible(True)
+
+    def _encode_reference_images(self) -> list[str]:
+        encoded: list[str] = []
+        for path in self._ai_reference_images:
+            absolute = self._project_service.resolve_asset_path(path)
+            try:
+                data = absolute.read_bytes()
+            except OSError:
+                continue
+            mime, _ = mimetypes.guess_type(str(absolute))
+            mime = mime or "image/png"
+            b64 = base64.b64encode(data).decode("ascii")
+            encoded.append(f"data:{mime};base64,{b64}")
+        return encoded
+
+    def _build_reference_panel(self, parent: QWidget) -> QWidget:
+        panel = QFrame(parent)
+        panel.setObjectName("AISeedreamReferencePanel")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(12, 8, 12, 8)
+        panel_layout.setSpacing(6)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(6)
+        title = QLabel("Referenzbilder (optional)", panel)
+        title.setStyleSheet("font-weight: 600; letter-spacing: 0.3px; font-size: 12px;")
+        header.addWidget(title, 1)
+        add_button = QToolButton(panel)
+        add_button.setIcon(QIcon(str(ACTION_ICONS["create"])))
+        add_button.setToolTip("Bild auswählen …")
+        add_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_button.clicked.connect(self._handle_ai_reference_add_clicked)
+        header.addWidget(add_button)
+        remove_button = QToolButton(panel)
+        remove_button.setIcon(QIcon(str(ACTION_ICONS["delete"])))
+        remove_button.setToolTip("Ausgewählte Referenz entfernen")
+        remove_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_button.clicked.connect(self._handle_ai_reference_remove_clicked)
+        header.addWidget(remove_button)
+        panel_layout.addLayout(header)
+        list_widget = _ReferenceImageList(panel, icon_size=QSize(86, 86))
+        list_widget.filesDropped.connect(self._handle_ai_reference_files_dropped)
+        list_widget.itemDoubleClicked.connect(self._handle_ai_reference_item_double_clicked)
+        self._ai_reference_list = list_widget
+        panel_layout.addWidget(list_widget)
+        placeholder = QLabel("Bilder hierher ziehen oder über das Plus auswählen.", panel)
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setStyleSheet("color: rgba(255,255,255,0.6); font-size: 11px; padding: 12px;")
+        panel_layout.addWidget(placeholder)
+        self._ai_reference_placeholder = placeholder
+        panel.setStyleSheet(
+            """
+            QFrame#AISeedreamReferencePanel {
+                background-color: rgba(0, 0, 0, 0.28);
+                border: 1px dashed rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+            }
+            """
+        )
+        self._refresh_reference_list()
+        return panel
+
+
+class _ReferenceImageList(QListWidget):
+    filesDropped = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None, *, icon_size: QSize | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("AIReferenceImageList")
+        self.setViewMode(QListWidget.ViewMode.IconMode)
+        self.setFlow(QListWidget.Flow.LeftToRight)
+        self.setWrapping(False)
+        self.setSpacing(8)
+        self.setIconSize(icon_size or QSize(96, 96))
+        self.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.setMovement(QListWidget.Movement.Static)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(False)
+        self.setStyleSheet(
+            """
+            QListWidget#AIReferenceImageList {
+                background: transparent;
+                border: none;
+                min-height: 80px;
+            }
+            QListWidget#AIReferenceImageList::item {
+                border-radius: 12px;
+                margin: 4px;
+                padding: 0px;
+            }
+            QListWidget#AIReferenceImageList::item:selected {
+                border: 1px solid rgba(120, 190, 255, 0.9);
+            }
+            """
+        )
+
+    def dragEnterEvent(self, event) -> None:  # type: ignore[override]
+        if self._has_files(event):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:  # type: ignore[override]
+        if self._has_files(event):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:  # type: ignore[override]
+        if self._has_files(event):
+            paths = []
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    paths.append(url.toLocalFile())
+            if paths:
+                self.filesDropped.emit(paths)
+                event.acceptProposedAction()
+                return
+        super().dropEvent(event)
+
+    @staticmethod
+    def _has_files(event) -> bool:
+        mime = event.mimeData()
+        return mime is not None and mime.hasUrls()

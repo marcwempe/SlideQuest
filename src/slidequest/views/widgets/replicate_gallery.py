@@ -4,7 +4,7 @@ from typing import Callable
 
 from PySide6.QtCore import QSize, Qt, QMimeData, QUrl, Signal
 from PySide6.QtGui import QDrag, QIcon, QPixmap
-from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
+from PySide6.QtWidgets import QLabel, QAbstractItemView, QListWidget, QListWidgetItem
 
 
 class ReplicateGalleryWidget(QListWidget):
@@ -29,7 +29,8 @@ class ReplicateGalleryWidget(QListWidget):
         self.setDragEnabled(True)
         self.setAcceptDrops(False)
         self.setSpacing(6 if show_labels else 2)
-        self.setIconSize(thumbnail or QSize(120, 120))
+        self._thumb_size = thumbnail or QSize(120, 120)
+        self.setIconSize(self._thumb_size)
         self.itemActivated.connect(self._emit_activation)
         self._entry_map: dict[str, dict[str, str]] = {}
         self._show_labels = show_labels
@@ -63,6 +64,7 @@ class ReplicateGalleryWidget(QListWidget):
     def set_entries(self, entries: list[dict[str, str]], resolver: Callable[[str], str]) -> None:
         self.clear()
         self._entry_map.clear()
+        use_thumbnails = not self._show_labels
         for entry in entries:
             entry_id = entry.get("id") or entry.get("path") or ""
             path = entry.get("path") or ""
@@ -76,18 +78,24 @@ class ReplicateGalleryWidget(QListWidget):
             pixmap = QPixmap(absolute)
             if pixmap.isNull():
                 continue
-            icon = QIcon(
-                pixmap.scaled(
-                    self.iconSize(),
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
+            scaled = pixmap.scaled(
+                self.iconSize(),
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
             )
+            icon = QIcon(scaled)
             item = QListWidgetItem(icon, display_text)
             item.setData(Qt.ItemDataRole.UserRole, entry_id)
             item.setData(Qt.ItemDataRole.UserRole + 1, absolute)
             item.setSizeHint(QSize(self.iconSize().width(), self.iconSize().height()))
             self.addItem(item)
+            if use_thumbnails:
+                label = QLabel()
+                label.setFixedSize(self.iconSize())
+                label.setPixmap(scaled)
+                label.setScaledContents(True)
+                label.setContentsMargins(0, 0, 0, 0)
+                self.setItemWidget(item, label)
             self._entry_map[entry_id] = entry
 
     def startDrag(self, supportedActions: Qt.DropActions) -> None:  # type: ignore[override]
