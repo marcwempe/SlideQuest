@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import sys
 
 from PySide6.QtCore import QTimer
@@ -18,6 +20,16 @@ def main() -> None:
         app = QApplication(sys.argv)
         app.setApplicationName("SlideQuest")
         app.setOrganizationName("SlideQuest")
+        log_level = os.environ.get("PYTHONLOGLEVEL", "INFO").upper()
+        resolved_level = getattr(logging, log_level, logging.INFO)
+        root_logger = logging.getLogger()
+        if not root_logger.handlers:
+            logging.basicConfig(
+                level=resolved_level,
+                format="%(asctime)s [%(levelname)s] %(name)s – %(message)s",
+            )
+        else:
+            root_logger.setLevel(resolved_level)
 
     launcher = LauncherWindow()
     launcher.show()

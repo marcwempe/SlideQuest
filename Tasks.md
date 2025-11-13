@@ -10,6 +10,10 @@ _Template_
 
 Append new tasks at the top so the most recent priorities stay visible. Remove bullets once all subtasks are complete or explicitly dropped.
 
+- Govee Light Control Integration
+  - Navigationsbutton inkl. Bootstrap-Icon hinzufügen & API-Key-Check aus .env implementieren
+  - LightControlView (Header/Main/Footer) erstellen, Geräte synchronisieren und als Header-Icons listen
+  - Fehlenden API-Key via Dialog nachfordern und Geräteverwaltung laut docs/assets/thirdparty/govee vorbereiten
 - Replicate Seedance Integration
   - KI-Unterstützungsbutton in Navigation inkl. Bootstrap-Icon & API-Key-Handling (.env oder Dialog)
   - Seedance-Steuerung im Detailbereich basierend auf docs/assets/thirdparty/replicate (Prompts, Einstellungen, Start/Status)

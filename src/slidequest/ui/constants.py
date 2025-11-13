@@ -63,6 +63,7 @@ ACTION_ICONS = {
     "ai_assist": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "robot-ai.svg",
     "drawer_close": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "chevron-bar-right.svg",
     "drawer_open": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "chevron-bar-left.svg",
+    "light_control": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "lightbulb.svg",
 }
 
 SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
@@ -92,6 +93,13 @@ SYMBOL_BUTTON_SPECS: tuple[ButtonSpec, ...] = (
         "AIExplorerLauncher",
         ACTION_ICONS["ai_assist"],
         "KI-Unterstützung öffnen",
+        checkable=True,
+        auto_exclusive=True,
+    ),
+    ButtonSpec(
+        "LightControlLauncher",
+        ACTION_ICONS["light_control"],
+        "Govee LightControl öffnen – SQ.LightControl.Nav",
         checkable=True,
         auto_exclusive=True,
     ),

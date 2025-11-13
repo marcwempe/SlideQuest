@@ -19,6 +19,7 @@ This document is exclusively for automation agents. Keep the human-facing contex
 ## Tooling
 - Use `uv` (`uv add`, `uv sync`, `uv run`) or the equivalent `make run|dev|sync`.
 - Launch the GUI via `uv run slidequest`; for hot reload use `uv run slidequest-dev` or `make dev`.
+- `make run`, `make dev`, and `make test` now export `DYLD_LIBRARY_PATH` with `.venv/lib/python*/site-packages/torch/lib` and `/opt/homebrew/opt/ffmpeg/lib` so `torchcodec` works; if you call `uv run ...` manually, set this env var yourself first.
 - Prefer `rg` for search; stay ASCII unless a file already uses Unicode.
 - CI runs `uv sync --all-groups`, `flake8`, and `pytest` (see `.github/workflows/python.yml`). Ensure those commands succeed locally when relevant.
 

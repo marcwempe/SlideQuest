@@ -36,6 +36,7 @@ from slidequest.services.storage import SlideStorage
 from slidequest.services.audio_service import AudioService
 from slidequest.services.transcription_service import LiveTranscriptionService, RecordingResult
 from slidequest.services.replicate_service import ReplicateService
+from slidequest.services.govee_service import GoveeService
 from slidequest.ui.constants import (
     ACTION_ICONS,
     DETAIL_HEADER_HEIGHT,
@@ -52,6 +53,7 @@ from slidequest.views.master.notes_section import NotesSectionMixin
 from slidequest.views.master.playlist_section import PlaylistSectionMixin
 from slidequest.views.master.chrome_section import ChromeSectionMixin
 from slidequest.views.master.ai_section import AISectionMixin
+from slidequest.views.master.light_section import LightControlSectionMixin
 from slidequest.views.master.token_bar import TokenBar
 from slidequest.views.presentation_window import PresentationWindow
 from slidequest.views.widgets.common import IconBinding
@@ -60,6 +62,7 @@ from slidequest.views.widgets.slide_list import SlideListWidget
 
 
 class MasterWindow(
+    LightControlSectionMixin,
     AISectionMixin,
     PlaylistSectionMixin,
     NotesSectionMixin,
@@ -108,6 +111,8 @@ class MasterWindow(
         self._viewmodel.add_listener(self._on_viewmodel_changed)
         self._replicate_service = ReplicateService()
         self._init_ai_service()
+        self._govee_service = GoveeService()
+        self._init_light_service()
         self._transcription_service = LiveTranscriptionService(self._project_service)
         self._transcription_service.recording_failed.connect(self._handle_transcription_failure)
         self._transcription_service.recording_completed.connect(self._handle_async_recording_completed)
@@ -140,6 +145,7 @@ class MasterWindow(
         self._content_splitter: QSplitter | None = None
         self._detail_last_sizes: list[int] = []
         self._setup_placeholder()
+        self._bootstrap_light_sync()
         self._update_project_title_label()
         self._update_trash_label()
         self._update_project_title_label()
@@ -402,6 +408,9 @@ class MasterWindow(
         ai_detail = self._build_ai_detail_view(detail_stack)
         detail_stack.addWidget(ai_detail)
         self._detail_view_widgets["ai"] = ai_detail
+        light_detail = self._build_light_detail_view(detail_stack)
+        detail_stack.addWidget(light_detail)
+        self._detail_view_widgets["lights"] = light_detail
 
         splitter.addWidget(explorer_container)
         splitter.addWidget(detail_container)
@@ -697,11 +706,13 @@ class MasterWindow(
         audio_button = self._symbol_button_map.get("AudioExplorerLauncher")
         note_button = self._symbol_button_map.get("NoteExplorerLauncher")
         ai_button = self._symbol_button_map.get("AIExplorerLauncher")
+        light_button = self._symbol_button_map.get("LightControlLauncher")
         self._detail_mode_buttons = {
             "layout": layout_button,
             "audio": audio_button,
             "notes": note_button,
             "ai": ai_button,
+            "lights": light_button,
         }
         handlers_connected = False
         for mode, button in self._detail_mode_buttons.items():
@@ -1151,6 +1162,13 @@ class MasterWindow(
                     button.setChecked(False)
                     button.blockSignals(False)
                 return
+            if mode == "lights" and not self._ensure_govee_api_key():
+                button = self._detail_mode_buttons.get(mode)
+                if button is not None:
+                    button.blockSignals(True)
+                    button.setChecked(False)
+                    button.blockSignals(False)
+                return
             self._activate_detail_mode(mode)
             return
         replacement_mode = self._resolve_checked_detail_mode(exclude=mode)
@@ -1175,6 +1193,8 @@ class MasterWindow(
         if stack is None or widget is None:
             return
         stack.setCurrentWidget(widget)
+        if mode == "lights":
+            self._handle_light_mode_activated()
         self._detail_active_mode = mode
         self._set_detail_views_visible(True)
 
