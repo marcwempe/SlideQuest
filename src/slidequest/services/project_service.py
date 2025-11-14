@@ -136,8 +136,8 @@ class ProjectStorageService:
     # ------------------------------------------------------------------ #
     # Asset management
     # ------------------------------------------------------------------ #
-    def import_file(self, kind: str, source: str) -> str:
-        """Copy a file into the project folder with hash-deduplicated UUID naming."""
+    def import_file(self, kind: str, source: str, *, deduplicate: bool = True) -> str:
+        """Copy a file into the project folder with optional hash deduplication."""
         source_path = Path(source)
         if not source_path.exists():
             raise FileNotFoundError(source)
@@ -145,22 +145,23 @@ class ProjectStorageService:
         file_index: dict[str, Any] = project.setdefault("files", {})
 
         digest, size = self._hash_file(source_path)
-        for file_id, info in file_index.items():
-            if info.get("hash") == digest and info.get("size") == size and info.get("kind") == kind:
-                return info.get("path", "")
+        if deduplicate:
+            for info in file_index.values():
+                if info.get("hash") == digest and info.get("size") == size and info.get("kind") == kind:
+                    return info.get("path", "")
 
-        restored_path = self.restore_from_trash(kind, digest, size)
-        if restored_path:
-            file_id = uuid.uuid4().hex
-            file_index[file_id] = {
-                "kind": kind,
-                "path": restored_path,
-                "hash": digest,
-                "size": size,
-                "original_name": source_path.name,
-            }
-            self.save_project(project)
-            return restored_path
+            restored_path = self.restore_from_trash(kind, digest, size)
+            if restored_path:
+                file_id = uuid.uuid4().hex
+                file_index[file_id] = {
+                    "kind": kind,
+                    "path": restored_path,
+                    "hash": digest,
+                    "size": size,
+                    "original_name": source_path.name,
+                }
+                self.save_project(project)
+                return restored_path
 
         file_id = uuid.uuid4().hex
         extension = source_path.suffix.lower()
@@ -228,6 +229,21 @@ class ProjectStorageService:
     def set_replicate_entries(self, entries: list[dict[str, str]]) -> None:
         project = self.load_project()
         project["replicate_gallery"] = entries
+        self.save_project(project)
+
+    def style_prompt(self) -> str:
+        project = self.load_project()
+        meta = project.setdefault("meta", {})
+        return meta.get("style_prompt") or ""
+
+    def set_style_prompt(self, prompt: str) -> None:
+        project = self.load_project()
+        meta = project.setdefault("meta", {})
+        normalized = prompt.strip()
+        if normalized:
+            meta["style_prompt"] = normalized
+        else:
+            meta.pop("style_prompt", None)
         self.save_project(project)
 
     def trash_path(self) -> Path:

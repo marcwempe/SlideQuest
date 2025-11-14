@@ -125,21 +125,6 @@ class NotesSectionMixin:
         renderer_stack.addWidget(error_label)
         self._note_error_label = error_label
 
-        footer = QFrame(view)
-        footer.setObjectName("NotesDetailFooter")
-        footer.setFixedHeight(DETAIL_FOOTER_HEIGHT + 20)
-        footer_layout = QVBoxLayout(footer)
-        footer_layout.setContentsMargins(12, 8, 12, 12)
-        footer_layout.setSpacing(4)
-
-        doc_list = DocumentListWidget(footer)
-        doc_list.setMinimumHeight(DETAIL_FOOTER_HEIGHT + 80)
-        doc_list.filesDropped.connect(self._handle_note_files_dropped)
-        doc_list.currentRowChanged.connect(self._handle_note_selection_changed)
-        doc_list.orderChanged.connect(self._handle_note_order_changed)
-        footer_layout.addWidget(doc_list)
-        self._note_document_list = doc_list
-
         layout.addWidget(header)
         splitter = QSplitter(Qt.Orientation.Horizontal, view)
         splitter.setObjectName("NotesContentSplitter")
@@ -196,7 +181,7 @@ class NotesSectionMixin:
         save_button = self._create_icon_button(
             layout.parentWidget(),  # type: ignore[arg-type]
             "NotesSaveDocumentButton",
-            ACTION_ICONS["edit"],
+            ACTION_ICONS["save"],
             "Dokument speichern",
         )
         save_button.clicked.connect(self._handle_note_save_requested)
@@ -554,7 +539,7 @@ class NotesSectionMixin:
                 handle.write(template)
                 tmp_path = Path(handle.name)
             try:
-                reference = service.import_file("notes", str(tmp_path))
+                reference = service.import_file("notes", str(tmp_path), deduplicate=False)
             finally:
                 tmp_path.unlink(missing_ok=True)
         added = self._viewmodel.add_note_documents([reference])

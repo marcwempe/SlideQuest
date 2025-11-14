@@ -41,6 +41,7 @@ class SlideData:
     audio: SlideAudioPayload
     notes: SlideNotesPayload
     images: dict[int, str] = field(default_factory=dict)
+    ai_prompt: str = ""
     tokens: list["SlideTokenPlacement"] = field(default_factory=list)
 
 

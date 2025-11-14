@@ -218,6 +218,26 @@ class MasterViewModel:
                 return entry
         return None
 
+    def style_prompt(self) -> str:
+        return self._project_service.style_prompt()
+
+    def set_style_prompt(self, prompt: str) -> None:
+        self._project_service.set_style_prompt(prompt)
+
+    def current_slide_prompt(self) -> str:
+        slide = self.current_slide
+        return slide.ai_prompt if slide else ""
+
+    def set_current_slide_prompt(self, prompt: str) -> None:
+        slide = self.current_slide
+        if slide is None:
+            return
+        normalized = prompt
+        if slide.ai_prompt == normalized:
+            return
+        slide.ai_prompt = normalized
+        self.persist()
+
     # --- notes --------------------------------------------------------
     def note_documents(self) -> list[str]:
         slide = self.current_slide

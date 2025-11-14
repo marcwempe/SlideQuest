@@ -42,6 +42,7 @@ ACTION_ICONS = {
     "filter": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "filter.svg",
     "create": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "plus-square.svg",
     "edit": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "pencil-square.svg",
+    "save": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "save.svg",
     "delete": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "trash.svg",
     "spinner": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "arrow-repeat.svg",
     "text_bold": PROJECT_ROOT / "assets" / "icons" / "bootstrap" / "actions" / "text-bold.svg",

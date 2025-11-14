@@ -60,6 +60,7 @@ class SlideStorage:
             layout=SlideLayoutPayload("1S|100/1R|100", "", []),
             audio=SlideAudioPayload(),
             notes=SlideNotesPayload(),
+            ai_prompt="",
         )
         project["slides"] = [self._slide_to_payload(default_slide)]
         self._project_service.save_project(project)
@@ -171,6 +172,7 @@ class SlideStorage:
             notes=SlideNotesPayload(
                 notebooks=list(notes_data.get("notebooks") or []),
             ),
+            ai_prompt=data.get("ai_prompt") or "",
             tokens=token_entries,
         )
         return slide
@@ -202,6 +204,7 @@ class SlideStorage:
             "notes": {
                 "notebooks": list(slide.notes.notebooks),
             },
+            "ai_prompt": slide.ai_prompt,
             "tokens": [
                 {
                     "placement_id": token.placement_id or uuid4().hex,
@@ -225,6 +228,7 @@ class SlideStorage:
                 layout=SlideLayoutPayload(layout.layout, "", []),
                 audio=SlideAudioPayload(),
                 notes=SlideNotesPayload(),
+                ai_prompt="",
             )
             slides.append(slide)
         return slides

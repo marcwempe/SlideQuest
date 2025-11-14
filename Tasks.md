@@ -10,6 +10,10 @@ _Template_
 
 Append new tasks at the top so the most recent priorities stay visible. Remove bullets once all subtasks are complete or explicitly dropped.
 
+- Seedream Prompt Workflow
+  - Style-Prompt Drawer rechts vom Prompt einfügen, Inhalt projektspezifisch speichern und bei Generierung anhängen
+  - Letzten Prompt je Slide sichern und beim Slide-Wechsel ins Eingabefeld zurückspielen
+  - Galerie im Footer um Bild-Vorschau bei Klick und Kontextmenü-Löschen via Rechtsklick erweitern
 - Govee Light Control Integration
   - Navigationsbutton inkl. Bootstrap-Icon hinzufügen & API-Key-Check aus .env implementieren
   - LightControlView (Header/Main/Footer) erstellen, Geräte synchronisieren und als Header-Icons listen

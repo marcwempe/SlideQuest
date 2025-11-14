@@ -929,6 +929,12 @@ class MasterWindow(
         self._refresh_soundboard_buttons()
         self._refresh_token_bar()
         self._refresh_token_overlays(force=True)
+        sync_style = getattr(self, "_sync_ai_style_prompt", None)
+        if callable(sync_style):
+            sync_style()
+        sync_prompt = getattr(self, "_sync_ai_prompt_editor", None)
+        if callable(sync_prompt):
+            sync_prompt()
         self._update_project_title_label()
         self._update_trash_label()
 

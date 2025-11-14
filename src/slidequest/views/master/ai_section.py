@@ -7,9 +7,11 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QSize, Signal
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import Qt, QSize, Signal, QPoint
+from PySide6.QtGui import QIcon, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -29,6 +31,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLineEdit,
     QSizePolicy,
+    QScrollArea,
+    QMenu,
 )
 
 from slidequest.services.replicate_service import ReplicateService
@@ -61,6 +65,15 @@ class AISectionMixin:
         self._ai_reference_images: list[str] = []
         self._ai_reference_list: _ReferenceImageList | None = None
         self._ai_reference_placeholder: QLabel | None = None
+        self._ai_style_drawer: QFrame | None = None
+        self._ai_style_toggle: QToolButton | None = None
+        self._ai_style_input: QTextEdit | None = None
+        self._ai_style_container: QWidget | None = None
+        self._ai_style_drawer_width = 260
+        self._ai_style_container_width = self._ai_style_drawer_width
+        self._ai_prompt_height = 140
+        self._ai_style_syncing = False
+        self._ai_prompt_syncing = False
 
     # ------------------------------------------------------------------ #
     # Service wiring
@@ -175,12 +188,34 @@ class AISectionMixin:
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(12)
 
+        prompt_height = self._ai_prompt_height
         prompt = QTextEdit(main)
         prompt.setObjectName("AISeedreamPrompt")
         prompt.setPlaceholderText("Beschreibe die gewünschte Szene …")
-        prompt.setFixedHeight(140)
+        prompt.setMinimumHeight(prompt_height)
+        prompt.setFrameShape(QFrame.Shape.NoFrame)
+        prompt.setStyleSheet(
+            """
+            QTextEdit#AISeedreamPrompt {
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                padding: 8px 10px;
+                background-color: #1d1d1d;
+            }
+            """
+        )
         self._ai_prompt_input = prompt
-        main_layout.addWidget(prompt)
+
+        prompt_row = QFrame(main)
+        prompt_row_layout = QGridLayout(prompt_row)
+        prompt_row_layout.setContentsMargins(0, 0, 0, 0)
+        prompt_row_layout.setHorizontalSpacing(6)
+        prompt_row_layout.setVerticalSpacing(0)
+        prompt_row_layout.addWidget(prompt, 0, 0, 1, 1)
+
+        style_drawer = self._build_style_prompt_drawer(prompt_row)
+        prompt_row_layout.addWidget(style_drawer, 0, 1)
+        main_layout.addWidget(prompt_row)
 
         reference_panel = self._build_reference_panel(main)
         reference_panel.setFixedHeight(prompt.height())
@@ -229,10 +264,100 @@ class AISectionMixin:
         gallery = ReplicateGalleryWidget(footer, show_labels=False, thumbnail=QSize(192, 108))
         gallery.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
         gallery.entryActivated.connect(self._handle_ai_gallery_entry_activated)
+        gallery.entryContextRequested.connect(self._handle_ai_gallery_context_requested)
         self._ai_gallery = gallery
         footer_layout.addWidget(gallery)
         layout.addWidget(footer)
+        self._sync_ai_style_prompt()
+        self._sync_ai_prompt_editor()
         return view
+
+    def _build_style_prompt_drawer(self, parent: QWidget) -> QWidget:
+        drawer = QFrame(parent)
+        drawer.setObjectName("AIStylePromptDrawer")
+        drawer_layout = QHBoxLayout(drawer)
+        drawer_layout.setContentsMargins(0, 0, 0, 0)
+        drawer_layout.setSpacing(0)
+        drawer.setStyleSheet(
+            """
+            QFrame#AIStylePromptDrawer {
+                border-radius: 12px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                background-color: #1d1d1d;
+            }
+            """
+        )
+
+        editor_container = QWidget(drawer)
+        editor_container.setObjectName("AIStylePromptStackWrapper")
+        editor_container.setFixedWidth(self._ai_style_container_width)
+        editor_container.setFixedHeight(self._ai_prompt_height)
+        editor_container.setContentsMargins(0, 0, 0, 0)
+        editor_container_layout = QVBoxLayout(editor_container)
+        editor_container_layout.setContentsMargins(0, 0, 0, 0)
+        editor_container_layout.setSpacing(0)
+
+        editor = QTextEdit(editor_container)
+        editor.setObjectName("AIStylePromptInput")
+        editor.setPlaceholderText("Projektweit gültige Stilhinweise ergänzen …")
+        editor.setFixedHeight(self._ai_prompt_height)
+        editor.setFrameShape(QFrame.Shape.NoFrame)
+        editor.setStyleSheet(
+            """
+            QTextEdit#AIStylePromptInput {
+                border: none;
+                border-radius: 12px;
+                padding: 8px 10px;
+                background-color: #1d1d1d;
+            }
+            """
+        )
+        editor.setContentsMargins(0, 0, 0, 0)
+        editor.setViewportMargins(0, 0, 0, 0)
+        editor.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding))
+        editor.textChanged.connect(self._handle_style_prompt_changed)
+        editor_container_layout.addWidget(editor)
+        drawer_layout.addWidget(editor_container, 0, Qt.AlignmentFlag.AlignLeft)
+
+        toggle = QPushButton(drawer)
+        toggle.setObjectName("AIStylePromptToggle")
+        toggle.setCheckable(True)
+        toggle.setChecked(False)
+        toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        toggle.setText("")
+        toggle.setIcon(QIcon(str(ACTION_ICONS["drawer_close"])))
+        toggle.setStyleSheet(
+            """
+            QPushButton#AIStylePromptToggle {
+                border: none;
+                color: #f8fafc;
+                font-weight: 600;
+                padding: 0;
+                background-color: rgba(255, 255, 255, 0.1);
+                border-top-right-radius: 12px;
+                border-bottom-right-radius: 12px;
+                border-top-left-radius: 12px;
+                border-bottom-left-radius: 12px;
+            }
+            QPushButton#AIStylePromptToggle:hover {
+                background-color: rgba(255, 255, 255, 0.18);
+            }
+            """
+        )
+        toggle.setMinimumWidth(44)
+        toggle.setMaximumWidth(44)
+        toggle.setMinimumHeight(self._ai_prompt_height)
+        toggle.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.MinimumExpanding))
+        toggle.toggled.connect(self._handle_style_drawer_toggled)
+        drawer_layout.addWidget(toggle, 0, Qt.AlignmentFlag.AlignRight)
+
+        drawer.setFixedHeight(self._ai_prompt_height)
+        self._ai_style_drawer = drawer
+        self._ai_style_toggle = toggle
+        self._ai_style_input = editor
+        self._ai_style_container = editor_container
+        self._handle_style_drawer_toggled(False)
+        return drawer
 
     # ------------------------------------------------------------------ #
     # Drawer
@@ -296,6 +421,7 @@ class AISectionMixin:
         )
         gallery.setThumbnailSize(self._ai_drawer_thumb)
         gallery.entryActivated.connect(self._handle_ai_gallery_entry_activated)
+        gallery.entryContextRequested.connect(self._handle_ai_gallery_context_requested)
         self._ai_drawer_gallery = gallery
         drawer_layout.addWidget(gallery, 1)
 
@@ -321,6 +447,26 @@ class AISectionMixin:
             drawer.setMinimumWidth(44)
             gallery.hide()
 
+    def _handle_style_drawer_toggled(self, checked: bool) -> None:
+        drawer = self._ai_style_drawer
+        toggle = self._ai_style_toggle
+        container = self._ai_style_container
+        if drawer is None or toggle is None:
+            return
+        if checked:
+            toggle.setIcon(QIcon(str(ACTION_ICONS["drawer_close"])))
+            if container:
+                container.show()
+            drawer.setMinimumWidth(self._ai_style_container_width + toggle.width())
+            drawer.setMaximumWidth(self._ai_style_container_width + toggle.width())
+        else:
+            toggle.setIcon(QIcon(str(ACTION_ICONS["drawer_open"])))
+            if container:
+                container.hide()
+            collapsed_width = toggle.minimumWidth()
+            drawer.setMinimumWidth(collapsed_width)
+            drawer.setMaximumWidth(collapsed_width)
+
     # ------------------------------------------------------------------ #
     # Handlers
     # ------------------------------------------------------------------ #
@@ -344,6 +490,8 @@ class AISectionMixin:
         if not prompt:
             QMessageBox.information(self, "Seedream", "Bitte zuerst einen Prompt eingeben.")
             return
+        style_prompt = self._ai_style_input.toPlainText().strip() if self._ai_style_input else ""
+        composed_prompt = prompt if not style_prompt else f"{prompt}\n\n{style_prompt}"
         try:
             size = self._ai_size_combo.currentData() if self._ai_size_combo else "2K"
             aspect = self._ai_aspect_combo.currentData() if self._ai_aspect_combo else "match_input_image"
@@ -353,7 +501,7 @@ class AISectionMixin:
             max_images = self._ai_max_images_spin.value() if self._ai_max_images_spin else 1
             image_inputs = self._encode_reference_images()
             request_id = service.generate_seedream(
-                prompt=prompt,
+                prompt=composed_prompt,
                 aspect_ratio=aspect,
                 size=size,
                 width=width,
@@ -365,8 +513,12 @@ class AISectionMixin:
         except Exception as exc:
             QMessageBox.warning(self, "Seedream", str(exc))
             return
+        viewmodel = getattr(self, "_viewmodel", None)
+        if viewmodel is not None:
+            viewmodel.set_current_slide_prompt(prompt)
         self._ai_request_meta[request_id] = {
-            "prompt": prompt,
+            "prompt": composed_prompt,
+            "style_prompt": style_prompt,
             "aspect_ratio": aspect,
             "size": size,
             "width": width,
@@ -412,8 +564,74 @@ class AISectionMixin:
         entry = self._viewmodel.get_replicate_entry(entry_id)
         if not entry:
             return
-        prompt = entry.get("prompt") or "Seedream"
-        QMessageBox.information(self, "Seedream-Prompt", prompt)
+        path = entry.get("path") or ""
+        if not path:
+            return
+        absolute = str(self._project_service.resolve_asset_path(path))
+        self._show_ai_gallery_preview(entry, absolute)
+
+    def _handle_ai_gallery_context_requested(self, entry_id: str, global_pos: QPoint) -> None:
+        entry = self._viewmodel.get_replicate_entry(entry_id)
+        if not entry:
+            return
+        menu = QMenu(self)
+        delete_action = menu.addAction("Bild löschen")
+        action = menu.exec(global_pos)
+        if action == delete_action:
+            self._delete_ai_gallery_entry(entry_id)
+
+    def _handle_style_prompt_changed(self) -> None:
+        if self._ai_style_input is None or self._ai_style_syncing:
+            return
+        viewmodel = getattr(self, "_viewmodel", None)
+        if viewmodel is None:
+            return
+        viewmodel.set_style_prompt(self._ai_style_input.toPlainText())
+
+    def _delete_ai_gallery_entry(self, entry_id: str) -> None:
+        entry = self._viewmodel.get_replicate_entry(entry_id)
+        if not entry:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Bild löschen",
+            "Möchtest du dieses Seedream-Bild dauerhaft entfernen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self._viewmodel.remove_replicate_entry(entry_id)
+        self._refresh_ai_galleries()
+
+    def _show_ai_gallery_preview(self, entry: dict[str, str], absolute: str) -> None:
+        pixmap = QPixmap(absolute)
+        if pixmap.isNull():
+            QMessageBox.warning(self, "Seedream", "Bild konnte nicht geladen werden.")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle(entry.get("prompt") or "Seedream Vorschau")
+        dialog.setObjectName("AISeedreamPreviewDialog")
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        preview = QLabel(scroll)
+        preview.setPixmap(pixmap)
+        preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        scroll.setWidget(preview)
+        layout.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        width = min(max(pixmap.width() + 48, 420), 1200)
+        height = min(max(pixmap.height() + 96, 360), 900)
+        dialog.resize(width, height)
+        dialog.exec()
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -434,6 +652,39 @@ class AISectionMixin:
             self._ai_gallery.set_entries(entries, resolver)
         if self._ai_drawer_gallery is not None:
             self._ai_drawer_gallery.set_entries(entries, resolver)
+
+    def _sync_ai_style_prompt(self) -> None:
+        editor = self._ai_style_input
+        if editor is None:
+            return
+        viewmodel = getattr(self, "_viewmodel", None)
+        target = viewmodel.style_prompt() if viewmodel is not None else ""
+        changed = editor.toPlainText() != target
+        if changed:
+            self._ai_style_syncing = True
+            editor.setPlainText(target)
+            editor.moveCursor(QTextCursor.MoveOperation.End)
+            self._ai_style_syncing = False
+        toggle = self._ai_style_toggle
+        desired_expanded = not bool(target.strip())
+        if toggle is not None and toggle.isChecked() != desired_expanded:
+            toggle.blockSignals(True)
+            toggle.setChecked(desired_expanded)
+            toggle.blockSignals(False)
+            self._handle_style_drawer_toggled(desired_expanded)
+
+    def _sync_ai_prompt_editor(self) -> None:
+        editor = self._ai_prompt_input
+        if editor is None:
+            return
+        viewmodel = getattr(self, "_viewmodel", None)
+        target = viewmodel.current_slide_prompt() if viewmodel is not None else ""
+        if editor.toPlainText() == target:
+            return
+        self._ai_prompt_syncing = True
+        editor.setPlainText(target)
+        editor.moveCursor(QTextCursor.MoveOperation.End)
+        self._ai_prompt_syncing = False
 
     def _ensure_replicate_api_token(self) -> bool:
         service = self._replicate_service

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QMimeData, QUrl, Signal
+from PySide6.QtCore import QSize, Qt, QMimeData, QUrl, Signal, QPoint
 from PySide6.QtGui import QDrag, QIcon, QPixmap
 from PySide6.QtWidgets import QLabel, QAbstractItemView, QListWidget, QListWidgetItem
 
@@ -11,6 +11,7 @@ class ReplicateGalleryWidget(QListWidget):
     """Grid-based gallery for Replicate results with drag support."""
 
     entryActivated = Signal(str)
+    entryContextRequested = Signal(str, QPoint)
 
     def __init__(
         self,
@@ -83,7 +84,7 @@ class ReplicateGalleryWidget(QListWidget):
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            icon = QIcon(scaled)
+            icon = QIcon(scaled) if not use_thumbnails else QIcon()
             item = QListWidgetItem(icon, display_text)
             item.setData(Qt.ItemDataRole.UserRole, entry_id)
             item.setData(Qt.ItemDataRole.UserRole + 1, absolute)
@@ -110,6 +111,14 @@ class ReplicateGalleryWidget(QListWidget):
         drag = QDrag(self)
         drag.setMimeData(mime)
         pixmap = item.icon().pixmap(self.iconSize())
+        if pixmap.isNull() and isinstance(path, str):
+            source = QPixmap(path)
+            if not source.isNull():
+                pixmap = source.scaled(
+                    self.iconSize(),
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
         if not pixmap.isNull():
             drag.setPixmap(pixmap)
             drag.setHotSpot(pixmap.rect().center())
@@ -119,3 +128,15 @@ class ReplicateGalleryWidget(QListWidget):
         entry_id = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(entry_id, str):
             self.entryActivated.emit(entry_id)
+
+    def contextMenuEvent(self, event) -> None:  # type: ignore[override]
+        item = self.itemAt(event.pos())
+        if item is None:
+            super().contextMenuEvent(event)
+            return
+        entry_id = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(entry_id, str):
+            self.entryContextRequested.emit(entry_id, event.globalPos())
+            event.accept()
+            return
+        super().contextMenuEvent(event)

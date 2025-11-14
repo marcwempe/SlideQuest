@@ -22,6 +22,7 @@ This document is exclusively for automation agents. Keep the human-facing contex
 - `make run`, `make dev`, and `make test` now export `DYLD_LIBRARY_PATH` with `.venv/lib/python*/site-packages/torch/lib` and `/opt/homebrew/opt/ffmpeg/lib` so `torchcodec` works; if you call `uv run ...` manually, set this env var yourself first.
 - Prefer `rg` for search; stay ASCII unless a file already uses Unicode.
 - CI runs `uv sync --all-groups`, `flake8`, and `pytest` (see `.github/workflows/python.yml`). Ensure those commands succeed locally when relevant.
+- Icon assets: all SVGs live under `/Users/marcwempe/Documents/Code/MTMT`; feel free to pick any existing icon from there when you need new UI symbols.
 
 ## Coding Guidelines
 - Entry point: `src/slidequest/app.py` stays minimal -- just bootstrap Master + Presentation windows. Business logic belongs in `src/slidequest/views/master_window.py` (UI composition), `src/slidequest/views/presentation_window.py` (rendering), `src/slidequest/viewmodels/...` (state/persistence), and helpers under `src/slidequest/services/...`, `src/slidequest/utils/...`, `src/slidequest/views/widgets/...`. Preserve this separation whenever you add features.

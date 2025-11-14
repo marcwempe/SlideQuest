@@ -178,8 +178,12 @@ class ExplorerSectionMixin:
             images = {}
         self._set_current_layout(layout_id, images)
         self._populate_playlist_tracks()
+        self._populate_note_documents()
         self._update_slide_item_states()
         self._handle_slide_selection_completed(slide)
+        sync_ai_prompt = getattr(self, "_sync_ai_prompt_editor", None)
+        if callable(sync_ai_prompt):
+            sync_ai_prompt()
 
     def _handle_slide_selection_completed(self, _slide: SlideData | None) -> None:
         return
