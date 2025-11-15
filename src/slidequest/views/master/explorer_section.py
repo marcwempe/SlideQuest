@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPixmap
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QColor, QFont, QPainter, QPalette, QPixmap, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -19,7 +20,9 @@ from PySide6.QtWidgets import (
 from slidequest.models.layouts import LAYOUT_ITEMS, LayoutItem
 from slidequest.models.slide import SlideData
 from slidequest.services.storage import DATA_DIR, PROJECT_ROOT, THUMBNAIL_DIR
+from slidequest.ui.constants import ACTION_ICONS
 from slidequest.utils.media import normalize_media_path, resolve_media_path, slugify
+from slidequest.views.master.explorer_controller import ExplorerController
 from slidequest.views.widgets.layout_preview import LayoutPreviewCard
 
 
@@ -101,12 +104,15 @@ class ExplorerSectionMixin:
         subtitle = subtitle_input.text().strip()
         group = group_input.text().strip() or "All"
         self._prepare_playlist_for_slide_change()
+        controller = self._get_explorer_controller()
+        if controller is None:
+            return
         layout_id = (
             self._current_slide.layout.active_layout
             if self._current_slide
             else (self._slides[0].layout.active_layout if self._slides else "1S|100/1R|100")
         )
-        slide = self._viewmodel.create_slide(layout_id, group=group)
+        slide = controller.create_slide(layout_id, group=group)
         slide.title = title
         slide.subtitle = subtitle
         self._slides = self._viewmodel.slides
@@ -121,7 +127,10 @@ class ExplorerSectionMixin:
         if current_row < 0:
             return
         self._prepare_playlist_for_slide_change()
-        self._viewmodel.delete_slide(current_row)
+        controller = self._get_explorer_controller()
+        if controller is None:
+            return
+        controller.delete_slide(current_row)
         self._slides = self._viewmodel.slides
         self._populate_slide_list()
         if current_row >= self._slide_list.count():
@@ -153,7 +162,10 @@ class ExplorerSectionMixin:
         title = title_input.text().strip() or slide.title or "Neue Folie"
         subtitle = subtitle_input.text().strip()
         group = group_input.text().strip() or slide.group or "All"
-        self._viewmodel.update_metadata(title, subtitle, group)
+        controller = self._get_explorer_controller()
+        if controller is None:
+            return
+        controller.update_metadata(title, subtitle, group)
         self._populate_slide_list(preserve_selection=True)
 
     def _on_slide_selected(self, item: QListWidgetItem | None) -> None:
@@ -164,7 +176,11 @@ class ExplorerSectionMixin:
         slide = item.data(Qt.ItemDataRole.UserRole) if item else None
         if slide is not None and slide is not self._current_slide:
             self._prepare_playlist_for_slide_change()
-        if slide and self._slide_list:
+        controller = self._get_explorer_controller()
+        if slide and self._slide_list and controller is not None:
+            row = self._slide_list.row(item)
+            slide = controller.select(row)
+        elif slide and self._slide_list:
             row = self._slide_list.row(item)
             self._viewmodel.select_slide(row)
             slide = self._viewmodel.current_slide
@@ -200,11 +216,31 @@ class ExplorerSectionMixin:
                 order.append(self._slides.index(slide))
         if len(order) != len(self._slides):
             return
-        self._viewmodel.reorder_slides(order)
+        controller = self._get_explorer_controller()
+        if controller is None:
+            return
+        controller.reorder(order)
         self._slides = self._viewmodel.slides
         self._current_slide = self._viewmodel.current_slide
         self._populate_slide_list(preserve_selection=True)
         self._sync_preview_with_current_slide()
+
+    def _move_slide(self, slide: SlideData, offset: int) -> None:
+        controller = self._get_explorer_controller()
+        if controller is None or self._viewmodel is None:
+            return
+        if not self._slides or slide not in self._slides or offset == 0:
+            return
+        current_index = self._slides.index(slide)
+        target_index = current_index + offset
+        if not (0 <= target_index < len(self._slides)):
+            return
+        order = list(range(len(self._slides)))
+        order[current_index], order[target_index] = order[target_index], order[current_index]
+        controller.reorder(order)
+        self._slides = self._viewmodel.slides
+        self._current_slide = self._viewmodel.current_slide
+        self._populate_slide_list(preserve_selection=True)
 
     def _refresh_slide_widget(self, slide: SlideData) -> None:
         if not self._slide_list:
@@ -379,6 +415,34 @@ class ExplorerSectionMixin:
 
         container_layout.addWidget(preview_label)
         container_layout.addLayout(text_layout, 1)
+
+        control_layout = QVBoxLayout()
+        control_layout.setContentsMargins(0, 0, 0, 0)
+        control_layout.setSpacing(4)
+
+        up_button = QToolButton(container)
+        up_button.setObjectName("SlideItemMoveUp")
+        up_button.setIcon(QIcon(str(ACTION_ICONS["move_up"])))
+        up_button.setIconSize(QSize(16, 16))
+        up_button.setToolTip("Folie nach oben verschieben")
+        up_button.setAutoRaise(True)
+        up_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        up_button.clicked.connect(lambda _checked=False, s=slide: self._move_slide(s, -1))
+
+        down_button = QToolButton(container)
+        down_button.setObjectName("SlideItemMoveDown")
+        down_button.setIcon(QIcon(str(ACTION_ICONS["move_down"])))
+        down_button.setIconSize(QSize(16, 16))
+        down_button.setToolTip("Folie nach unten verschieben")
+        down_button.setAutoRaise(True)
+        down_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        down_button.clicked.connect(lambda _checked=False, s=slide: self._move_slide(s, 1))
+
+        control_layout.addWidget(up_button)
+        control_layout.addWidget(down_button)
+        control_layout.addStretch(1)
+
+        container_layout.addLayout(control_layout)
         container.setStyleSheet(self._build_slide_item_stylesheet())
         return container
 
@@ -463,14 +527,32 @@ class ExplorerSectionMixin:
                 continue
             is_active = row == active_row and active_row >= 0
             if widget.property("active") == is_active:
-                continue
-            widget.setProperty("active", is_active)
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
-            widget.update()
+                pass
+            else:
+                widget.setProperty("active", is_active)
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+                widget.update()
+            up_button = widget.findChild(QToolButton, "SlideItemMoveUp")
+            down_button = widget.findChild(QToolButton, "SlideItemMoveDown")
+            if up_button is not None:
+                up_button.setEnabled(row > 0)
+            if down_button is not None:
+                down_button.setEnabled(row < self._slide_list.count() - 1)
 
     @staticmethod
     def _color_with_alpha(color: QColor, alpha: int) -> str:
         clone = QColor(color)
         clone.setAlpha(max(0, min(255, alpha)))
         return clone.name(QColor.HexArgb)
+
+    def _get_explorer_controller(self) -> ExplorerController | None:
+        controller = getattr(self, "_explorer_controller", None)
+        if controller is not None:
+            return controller
+        viewmodel = getattr(self, "_viewmodel", None)
+        if viewmodel is None:
+            return None
+        controller = ExplorerController(viewmodel)
+        self._explorer_controller = controller
+        return controller
