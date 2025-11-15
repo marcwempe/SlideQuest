@@ -24,6 +24,7 @@ from slidequest.ui.constants import ACTION_ICONS
 from slidequest.utils.media import normalize_media_path, resolve_media_path, slugify
 from slidequest.views.master.explorer_controller import ExplorerController
 from slidequest.views.widgets.layout_preview import LayoutPreviewCard
+from slidequest.views.widgets.slide_item_widget import SlideListItemWidget
 
 
 class ExplorerSectionMixin:
@@ -256,14 +257,8 @@ class ExplorerSectionMixin:
                 break
 
     def _update_slide_item_widget(self, widget: QWidget, slide: SlideData) -> None:
-        if title := widget.findChild(QLabel, "SlideItemTitle"):
-            title.setText(slide.title)
-        if subtitle := widget.findChild(QLabel, "SlideItemSubtitle"):
-            subtitle.setText(slide.subtitle)
-        if group := widget.findChild(QLabel, "SlideItemGroup"):
-            group.setText(slide.group)
-        if preview := widget.findChild(QLabel, "SlideItemPreview"):
-            preview.setPixmap(self._build_preview_pixmap(slide))
+        if isinstance(widget, SlideListItemWidget):
+            widget.set_slide(slide, self._build_preview_pixmap(slide))
 
     def _set_current_layout(self, layout_id: str, images: dict[int, str] | None = None) -> None:
         layout_id = layout_id or "1S|100/1R|100"
@@ -379,72 +374,11 @@ class ExplorerSectionMixin:
         self._update_slide_item_states()
 
     def _create_slide_list_widget(self, slide: SlideData) -> QWidget:
-        container = QFrame()
-        container.setObjectName("SlideListViewItem")
-        container_layout = QHBoxLayout(container)
-        container_layout.setContentsMargins(8, 8, 8, 8)
-        container_layout.setSpacing(12)
-        container.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
-        container.setProperty("active", False)
-
-        preview_label = QLabel(container)
-        preview_label.setObjectName("SlideItemPreview")
-        preview_label.setFixedSize(96, 72)
-        preview_label.setPixmap(self._build_preview_pixmap(slide))
-        preview_label.setScaledContents(True)
-
-        text_layout = QVBoxLayout()
-        text_layout.setContentsMargins(0, 0, 0, 0)
-        text_layout.setSpacing(2)
-        title = QLabel(slide.title, container)
-        title.setObjectName("SlideItemTitle")
-        title_font = QFont(title.font())
-        title_font.setPointSize(max(12, title_font.pointSize()))
-        title_font.setWeight(QFont.Weight.DemiBold)
-        title.setFont(title_font)
-        subtitle = QLabel(slide.subtitle, container)
-        subtitle.setObjectName("SlideItemSubtitle")
-        group = QLabel(slide.group, container)
-        group.setObjectName("SlideItemGroup")
-        group_font = QFont(group.font())
-        group_font.setPointSize(max(10, group_font.pointSize() - 2))
-        group.setFont(group_font)
-        text_layout.addWidget(title)
-        text_layout.addWidget(subtitle)
-        text_layout.addWidget(group)
-
-        container_layout.addWidget(preview_label)
-        container_layout.addLayout(text_layout, 1)
-
-        control_layout = QVBoxLayout()
-        control_layout.setContentsMargins(0, 0, 0, 0)
-        control_layout.setSpacing(4)
-
-        up_button = QToolButton(container)
-        up_button.setObjectName("SlideItemMoveUp")
-        up_button.setIcon(QIcon(str(ACTION_ICONS["move_up"])))
-        up_button.setIconSize(QSize(16, 16))
-        up_button.setToolTip("Folie nach oben verschieben")
-        up_button.setAutoRaise(True)
-        up_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        up_button.clicked.connect(lambda _checked=False, s=slide: self._move_slide(s, -1))
-
-        down_button = QToolButton(container)
-        down_button.setObjectName("SlideItemMoveDown")
-        down_button.setIcon(QIcon(str(ACTION_ICONS["move_down"])))
-        down_button.setIconSize(QSize(16, 16))
-        down_button.setToolTip("Folie nach unten verschieben")
-        down_button.setAutoRaise(True)
-        down_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        down_button.clicked.connect(lambda _checked=False, s=slide: self._move_slide(s, 1))
-
-        control_layout.addWidget(up_button)
-        control_layout.addWidget(down_button)
-        control_layout.addStretch(1)
-
-        container_layout.addLayout(control_layout)
-        container.setStyleSheet(self._build_slide_item_stylesheet())
-        return container
+        pixmap = self._build_preview_pixmap(slide)
+        widget = SlideListItemWidget(slide, pixmap, self)
+        widget.moveRequested.connect(self._move_slide)
+        widget.setStyleSheet(self._build_slide_item_stylesheet())
+        return widget
 
     def _build_preview_pixmap(self, slide: SlideData) -> QPixmap:
         preview_path = None
@@ -533,12 +467,8 @@ class ExplorerSectionMixin:
                 widget.style().unpolish(widget)
                 widget.style().polish(widget)
                 widget.update()
-            up_button = widget.findChild(QToolButton, "SlideItemMoveUp")
-            down_button = widget.findChild(QToolButton, "SlideItemMoveDown")
-            if up_button is not None:
-                up_button.setEnabled(row > 0)
-            if down_button is not None:
-                down_button.setEnabled(row < self._slide_list.count() - 1)
+            if isinstance(widget, SlideListItemWidget):
+                widget.set_move_enabled(row > 0, row < self._slide_list.count() - 1)
 
     @staticmethod
     def _color_with_alpha(color: QColor, alpha: int) -> str:

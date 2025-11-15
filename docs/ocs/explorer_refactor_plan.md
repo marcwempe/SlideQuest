@@ -7,8 +7,8 @@
 
 ## Aufgaben
 1. ExplorerController definieren (zuständig für ViewModel-Calls: create/edit/delete/select/reorder). ✅
-2. SlideListItem-Widget extrahieren (eigene Klasse unter `views/widgets`), Testerstellung einfacher.
-3. Unit-Tests: Controller, Buttons (Qt-Test via pytest-qt), Reorder + CRUD Cases (Teil-1 erledigt für Controller).
+2. SlideListItem-Widget extrahieren (eigene Klasse unter `views/widgets`), Testerstellung einfacher. ✅
+3. Unit-Tests: Controller, Buttons (Qt-Test via pytest-qt), Reorder + CRUD Cases (Controller + Widget Tests ✅, Buttons/CRUD noch offen).
 4. Dokumentation + Plan-Updates.
 
 ## Risiken
